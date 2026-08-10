@@ -135,7 +135,14 @@ function Metadata:cover(ui)
         return nil, nil
     end
 
-    local path = os.tmpname() .. ".png"
+    local stub = os.tmpname()
+    local path = stub .. ".png"
+
+    local function discard()
+        os.remove(path)
+        os.remove(stub)
+    end
+
     local written = pcall(function()
         image:writePNG(path)
     end)
@@ -145,7 +152,7 @@ function Metadata:cover(ui)
     end)
 
     if not written then
-        os.remove(path)
+        discard()
 
         return nil, nil
     end
@@ -153,14 +160,14 @@ function Metadata:cover(ui)
     local handle = io.open(path, "rb")
 
     if handle == nil then
-        os.remove(path)
+        discard()
 
         return nil, nil
     end
 
     local bytes = handle:read("*a")
     handle:close()
-    os.remove(path)
+    discard()
 
     if bytes == nil or #bytes == 0 then
         return nil, nil

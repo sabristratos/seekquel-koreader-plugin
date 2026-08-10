@@ -5,6 +5,7 @@ local InputDialog = require("ui/widget/inputdialog")
 local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
+local logger = require("logger")
 local _ = require("gettext")
 local T = require("ffi/util").template
 
@@ -13,17 +14,23 @@ local Api = require("seekquel_api")
 local Metadata = require("seekquel_metadata")
 local Settings = require("seekquel_settings")
 local Stats = require("seekquel_stats")
+local Updater = require("seekquel_updater")
 
 local Seekquel = WidgetContainer:extend({
     name = "seekquel",
     is_doc_only = false,
 })
 
-local VERSION = "1.0.0"
+local VERSION = "1.3.0"
 local PAIRING_POLL_SECONDS = 3
-local PAIRING_MAX_POLLS = 100
+local PAIRING_MIN_POLL_SECONDS = 2
+local PAIRING_FALLBACK_SECONDS = 900
 local PUSH_DEBOUNCE_SECONDS = 5
-local RECENT_HISTORY_DAYS = 7
+local METADATA_DELAY_SECONDS = 20
+local COVER_DELAY_SECONDS = 60
+local SYNC_BUDGET_SECONDS = 20
+local HISTORY_OVERLAP_DAYS = 2
+local SECONDS_PER_DAY = 86400
 local SEARCH_MIN_LENGTH = 2
 
 local STATUSES = {
@@ -33,17 +40,35 @@ local STATUSES = {
     { key = "did_not_finish", label = _("Did not finish") },
 }
 
+local SWITCHES = {
+    { key = "send_reading_time", default = true, label = _("Send reading time") },
+    { key = "send_highlights", default = true, label = _("Send highlights and notes") },
+    { key = "finish_at_end", default = true, label = _("Mark finished at the end of a book") },
+    { key = "auto_sync", default = true, label = _("Sync while reading") },
+    { key = "auto_sync_highlights", default = true, label = _("Send highlights automatically") },
+    { key = "wifi_on_demand", default = false, label = _("Turn on Wi-Fi to sync") },
+}
+
 function Seekquel:init()
     self.settings = Settings:new()
     self.api = Api:new(self.settings)
     self.stats = Stats:new()
     self.annotations = Annotations:new()
     self.metadata_reader = Metadata:new()
+    self.updater = Updater:new(self.api)
 
     self.digest = nil
     self.document_state = nil
     self.pages_turned = 0
     self.push_scheduled = false
+    self.pairing_active = false
+    self.run_deadline = nil
+
+    local interrupted = self.settings:takeInterruption()
+
+    if interrupted ~= nil then
+        logger.warn("Seekquel: previous run stopped during", interrupted.label)
+    end
 
     self.ui.menu:registerToMainMenu(self)
 end
@@ -61,45 +86,156 @@ function Seekquel:onReaderReady()
     end
 
     self:whenOnline(function()
+        self:beginRun()
         self:reportDevice()
         self:ensureDocument()
     end)
+
+    self:scheduleFileDetails(self.digest)
 end
 
 function Seekquel:reportDevice()
-    self.api:reportDevice({
+    local answer = self.api:reportDevice({
         device_name = self:deviceName(),
         platform = Device.model,
         app_version = VERSION,
-        settings = {
-            send_reading_time = self.settings:isEnabled("send_reading_time", true),
-            send_highlights = self.settings:isEnabled("send_highlights", true),
-            finish_at_end = self.settings:isEnabled("finish_at_end", true),
-            auto_sync = self.settings:isEnabled("auto_sync", true),
-            wifi_on_demand = self.settings:isEnabled("wifi_on_demand", false),
-        },
+        settings = self:currentSettings(),
+        diagnostics = self:diagnostics(),
     })
+
+    self:applyServerAnswer(answer)
+
+    if answer ~= nil then
+        self.settings:clearInterruption()
+    end
+end
+
+function Seekquel:diagnostics()
+    local interruption = self.settings:lastInterruption()
+    local slowest = self.settings:slowestCall()
+    local synced_at, synced_ok = self.settings:lastSync()
+
+    return {
+        interrupted_during = interruption and interruption.label or nil,
+        interrupted_at = interruption and interruption.at or nil,
+        slowest_call = slowest and slowest.label or nil,
+        slowest_seconds = slowest and slowest.seconds or nil,
+        last_sync_at = synced_at,
+        last_sync_ok = synced_ok,
+    }
+end
+
+function Seekquel:currentSettings()
+    local settings = {}
+
+    for _index, switch in ipairs(SWITCHES) do
+        settings[switch.key] = self.settings:isEnabled(switch.key, switch.default)
+    end
+
+    return settings
+end
+
+function Seekquel:applyServerAnswer(answer)
+    if type(answer) ~= "table" then
+        return
+    end
+
+    local offset = tonumber(answer.timezone_offset)
+
+    if offset ~= nil then
+        self.settings:setTimezoneOffset(offset)
+    end
+
+    if type(answer.plugin_version) == "string" then
+        self.settings:setLatestVersion(answer.plugin_version)
+    end
+
+    self:applyRequestedSettings(answer)
+end
+
+function Seekquel:restartPending()
+    local pending = self.settings:pendingRestart()
+
+    if type(pending) ~= "table" then
+        return false
+    end
+
+    if pending.from ~= VERSION or not Updater.isNewer(pending.to, VERSION) then
+        self.settings:setPendingRestart(nil)
+
+        return false
+    end
+
+    return true
+end
+
+function Seekquel:updateAvailable()
+    if self.path == nil or self:restartPending() then
+        return nil
+    end
+
+    local latest = self.settings:latestVersion()
+
+    return Updater.isNewer(latest, VERSION) and latest or nil
+end
+
+function Seekquel:applyRequestedSettings(answer)
+    if type(answer.apply) ~= "table" then
+        return
+    end
+
+    local revision = tonumber(answer.apply_revision)
+
+    if revision == nil or revision <= self.settings:appliedSettingsRevision() then
+        return
+    end
+
+    for _index, switch in ipairs(SWITCHES) do
+        local wanted = answer.apply[switch.key]
+
+        if type(wanted) == "boolean" then
+            self.settings:set(switch.key, wanted)
+        end
+    end
+
+    self.settings:markSettingsApplied(revision)
 end
 
 function Seekquel:ensureDocument()
     self:sendProgress()
     self.document_state = self.api:document(self.digest)
-    self:sendFileDetails()
 
     return self.document_state
 end
 
-function Seekquel:sendFileDetails()
-    if self.digest == nil then
+function Seekquel:scheduleFileDetails(digest)
+    if self.settings:hasSentDetails(digest) and self.settings:hasSentCover(digest) then
         return
     end
 
-    self:sendFileMetadata()
-    self:sendFileCover()
+    UIManager:scheduleIn(METADATA_DELAY_SECONDS, function()
+        self:whenIdle(digest, function()
+            self:sendFileMetadata()
+        end)
+    end)
+
+    UIManager:scheduleIn(COVER_DELAY_SECONDS, function()
+        self:whenIdle(digest, function()
+            self:sendFileCover()
+        end)
+    end)
+end
+
+function Seekquel:whenIdle(digest, task)
+    if self.digest ~= digest or not self.api:isConfigured() or not NetworkMgr:isOnline() then
+        return
+    end
+
+    task()
 end
 
 function Seekquel:sendFileMetadata()
-    if self.settings:hasSentDetails(self.digest) then
+    if self.digest == nil or self.settings:hasSentDetails(self.digest) then
         return
     end
 
@@ -117,13 +253,13 @@ function Seekquel:sendFileMetadata()
 
     self.document_state = state
 
-    if type(state.book) == "table" then
+    if state.details_stored == true then
         self.settings:markDetailsSent(self.digest)
     end
 end
 
 function Seekquel:sendFileCover()
-    if self.settings:hasSentCover(self.digest) then
+    if self.digest == nil or self.settings:hasSentCover(self.digest) then
         return
     end
 
@@ -146,10 +282,10 @@ function Seekquel:sendProgress()
     local progress, percentage = self:currentPosition()
 
     if progress == nil then
-        return
+        return true
     end
 
-    self.api:pushProgress(self.digest, progress, percentage, self:deviceName(), self:metadata())
+    return self.api:pushProgress(self.digest, progress, percentage, self:deviceName(), self:metadata()) ~= nil
 end
 
 function Seekquel:onPosUpdate()
@@ -212,34 +348,108 @@ function Seekquel:schedulePush()
     end)
 end
 
-function Seekquel:pushNow()
+function Seekquel:beginRun()
+    self.run_deadline = os.time() + SYNC_BUDGET_SECONDS
+end
+
+function Seekquel:hasBudget()
+    return self.run_deadline == nil or os.time() < self.run_deadline
+end
+
+function Seekquel:pushNow(asked_for)
     if not self:isReady() or self.digest == nil then
         return
     end
 
     local digest = self.digest
-    local highlights = self.settings:isEnabled("send_highlights", true)
-        and self.annotations:collect(self.ui.annotation and self.ui.annotation.annotations)
-        or {}
+    local highlights = self:collectHighlights(asked_for)
+    local pending, fingerprints = self:unsentHighlights(digest, highlights)
     local days = self.settings:isEnabled("send_reading_time", true) and self:readingDays(digest) or {}
-    local linked = self:isLinked()
 
     self:whenOnline(function()
-        self:sendProgress()
+        self:beginRun()
 
-        if not linked then
+        local sent = self:sendProgress()
+
+        if not self:refreshLink(digest) then
+            self.settings:recordSync(sent)
+
             return
         end
 
         if #days > 0 then
-            self.api:pushSessions(digest, days)
-            self.settings:markHistorySynced(digest)
+            if not self:hasBudget() then
+                sent = false
+            elseif type(self.api:pushSessions(digest, days)) == "table" then
+                self.settings:markHistorySynced(digest)
+            else
+                sent = false
+            end
         end
 
-        if #highlights > 0 then
-            self.api:pushHighlights(digest, highlights)
+        if #pending > 0 then
+            if not self:hasBudget() then
+                sent = false
+            elseif self.api:pushHighlights(digest, pending) ~= nil then
+                self.settings:markHighlightsSent(digest, fingerprints)
+            else
+                sent = false
+            end
         end
+
+        if self:hasBudget() then
+            self:sendFileMetadata()
+        end
+
+        self.settings:recordSync(sent)
     end)
+end
+
+function Seekquel:allHighlights()
+    return self.annotations:collect(self.ui.annotation and self.ui.annotation.annotations)
+end
+
+function Seekquel:collectHighlights(asked_for)
+    if not self.settings:isEnabled("send_highlights", true) then
+        return {}
+    end
+
+    if not asked_for and not self.settings:isEnabled("auto_sync_highlights", true) then
+        return {}
+    end
+
+    return (self:allHighlights())
+end
+
+function Seekquel:unsentHighlights(digest, highlights)
+    local sent = self.settings:sentHighlights(digest)
+    local pending = {}
+    local fingerprints = {}
+
+    for _index, highlight in ipairs(highlights) do
+        local fingerprint = self.annotations:fingerprint(highlight)
+
+        if sent[highlight.external_id] ~= fingerprint then
+            table.insert(pending, highlight)
+            fingerprints[highlight.external_id] = fingerprint
+        end
+    end
+
+    return pending, fingerprints
+end
+
+function Seekquel:refreshLink(digest)
+    if self:isLinked() then
+        return true
+    end
+
+    local state = self.api:document(digest)
+
+    if type(state) == "table" then
+        self.document_state = state
+    end
+
+    return self:isLinked()
 end
 
 function Seekquel:syncNow()
@@ -251,7 +461,7 @@ function Seekquel:syncNow()
         return
     end
 
-    self:pushNow()
+    self:pushNow(true)
     self:notify(_("Syncing in the background."))
 end
 
@@ -276,9 +486,10 @@ function Seekquel:canReachNetwork()
 end
 
 function Seekquel:readingDays(digest)
-    local since = self.settings:hasSyncedHistory(digest) and RECENT_HISTORY_DAYS or nil
+    local synced_at = self.settings:historySyncedAt(digest)
+    local floor = synced_at and (synced_at - (HISTORY_OVERLAP_DAYS * SECONDS_PER_DAY)) or nil
 
-    return self.stats:daysFor(digest, since)
+    return self.stats:daysFor(digest, floor, self.settings:timezoneOffset())
 end
 
 function Seekquel:whenOnline(task)
@@ -387,7 +598,28 @@ function Seekquel:menuItems()
         }
     end
 
-    return {
+    local items = {}
+    local update = self:updateAvailable()
+
+    if self:restartPending() then
+        table.insert(items, {
+            text = _("Restart KOReader to finish updating"),
+            keep_menu_open = false,
+            callback = function()
+                UIManager:askForRestart()
+            end,
+        })
+    elseif update ~= nil then
+        table.insert(items, {
+            text = T(_("Update the add-on to %1"), update),
+            keep_menu_open = false,
+            callback = function()
+                self:installUpdate()
+            end,
+        })
+    end
+
+    return self:appendMenuItems(items, {
         {
             text = self:bookLabel(),
             enabled = self:isReady(),
@@ -410,10 +642,170 @@ function Seekquel:menuItems()
             end,
         },
         {
+            text = _("Sync status"),
+            keep_menu_open = false,
+            callback = function()
+                self:notify(self:syncStatusText())
+            end,
+        },
+        {
             text = _("Settings"),
             sub_item_table = self:settingsItems(),
         },
-    }
+    })
+end
+
+function Seekquel:appendMenuItems(items, more)
+    for _index, item in ipairs(more) do
+        table.insert(items, item)
+    end
+
+    return items
+end
+
+function Seekquel:installUpdate()
+    if self.path == nil then
+        self:notify(_("This copy cannot update itself. Download the add-on from Seekquel instead."))
+
+        return
+    end
+
+    if not self:canReachNetwork() then
+        self:notify(_("No connection. Try updating again when you are online."))
+
+        return
+    end
+
+    self:whenOnline(function()
+        local waiting = InfoMessage:new({ text = _("Downloading the update.") })
+        UIManager:show(waiting)
+        UIManager:forceRePaint()
+
+        local manifest = self.api:pluginManifest()
+        local ok, reason = false, "no_manifest"
+
+        if type(manifest) == "table" and type(manifest.files) == "table" and type(manifest.version) == "string" then
+            ok, reason = self.updater:install(self.path, manifest.files)
+        end
+
+        UIManager:close(waiting)
+
+        if not ok then
+            self:notify(self:updateFailureText(reason))
+
+            return
+        end
+
+        self.settings:setPendingRestart(VERSION, manifest.version)
+        self.settings:setLatestVersion(nil)
+        UIManager:askForRestart(_("Seekquel is updated. Restart KOReader to start using it."))
+    end)
+end
+
+function Seekquel:updateFailureText(reason)
+    if reason == "stranded" then
+        return _("The update could not be put in place and the old copy could not be restored. Copy the add-on across from a computer to get Seekquel back.")
+    end
+
+    if reason == "not_writable" then
+        return _("This device will not let the add-on replace itself. Copy the new files across from a computer instead.")
+    end
+
+    if reason == "corrupt" or reason == "incomplete" then
+        return _("The download did not arrive intact, so nothing was changed. Try again on a better connection.")
+    end
+
+    return _("Could not reach Seekquel for the update. Nothing was changed.")
+end
+
+function Seekquel:syncStatusText()
+    local lines = { self:lastSyncLine() }
+
+    if not self:isReady() then
+        table.insert(lines, _("Open a book to see what is waiting for it."))
+
+        return table.concat(lines, "\n\n")
+    end
+
+    local book = self:book()
+
+    if book ~= nil then
+        table.insert(lines, T(_("Linked to %1"), book.title or _("a book")))
+    end
+
+    table.insert(lines, self:waitingLine())
+
+    return table.concat(lines, "\n\n")
+end
+
+function Seekquel:lastSyncLine()
+    local at, ok = self.settings:lastSync()
+
+    if at == nil then
+        return _("Nothing has synced yet.")
+    end
+
+    if ok then
+        return T(_("Last sync: %1."), self:agoLabel(at))
+    end
+
+    return T(_("Last try: %1, and some of it did not go through. It will be sent again."), self:agoLabel(at))
+end
+
+function Seekquel:waitingLine()
+    if not self:isLinked() then
+        return _("Nothing is sent for this book until you tell Seekquel which book it is.")
+    end
+
+    local highlights, total = self:allHighlights()
+
+    if total == 0 then
+        return _("No highlights on this book yet.")
+    end
+
+    local lines = { self:highlightLine(highlights, total) }
+
+    if total > #highlights then
+        table.insert(lines, T(_("Only the first %1 are sent."), tostring(#highlights)))
+    end
+
+    return table.concat(lines, " ")
+end
+
+function Seekquel:highlightLine(highlights, total)
+    if not self.settings:isEnabled("send_highlights", true) then
+        return T(_("%1 highlights on this book. This device is set not to send them."), tostring(total))
+    end
+
+    local pending = self:unsentHighlights(self.digest, highlights)
+
+    if #pending == 0 then
+        return T(_("%1 highlights on this book, all sent."), tostring(total))
+    end
+
+    if self.settings:isEnabled("auto_sync_highlights", true) then
+        return T(_("%1 highlights on this book, %2 still to send."), tostring(total), tostring(#pending))
+    end
+
+    return T(_("%1 highlights on this book, %2 sent when you tap Sync now."), tostring(total), tostring(#pending))
+end
+
+function Seekquel:agoLabel(at)
+    local seconds = os.time() - at
+
+    if seconds < 60 then
+        return _("just now")
+    end
+
+    if seconds < 3600 then
+        return T(_("%1 minutes ago"), tostring(math.floor(seconds / 60)))
+    end
+
+    if seconds < 86400 then
+        return T(_("%1 hours ago"), tostring(math.floor(seconds / 3600)))
+    end
+
+    return T(_("%1 days ago"), tostring(math.floor(seconds / 86400)))
 end
 
 function Seekquel:bookLabel()
@@ -447,63 +839,32 @@ function Seekquel:statusItems()
 end
 
 function Seekquel:settingsItems()
-    return {
-        {
-            text = _("Send reading time"),
+    local items = {}
+
+    for _index, switch in ipairs(SWITCHES) do
+        table.insert(items, {
+            text = switch.label,
             checked_func = function()
-                return self.settings:isEnabled("send_reading_time", true)
+                return self.settings:isEnabled(switch.key, switch.default)
             end,
             callback = function()
-                self.settings:toggle("send_reading_time", true)
+                self.settings:toggle(switch.key, switch.default)
             end,
-        },
-        {
-            text = _("Send highlights and notes"),
-            checked_func = function()
-                return self.settings:isEnabled("send_highlights", true)
-            end,
-            callback = function()
-                self.settings:toggle("send_highlights", true)
-            end,
-        },
-        {
-            text = _("Mark finished at the end of a book"),
-            checked_func = function()
-                return self.settings:isEnabled("finish_at_end", true)
-            end,
-            callback = function()
-                self.settings:toggle("finish_at_end", true)
-            end,
-        },
-        {
-            text = _("Sync while reading"),
-            checked_func = function()
-                return self.settings:isEnabled("auto_sync", true)
-            end,
-            callback = function()
-                self.settings:toggle("auto_sync", true)
-            end,
-        },
-        {
-            text = _("Turn on Wi-Fi to sync"),
-            checked_func = function()
-                return self.settings:isEnabled("wifi_on_demand", false)
-            end,
-            callback = function()
-                self.settings:toggle("wifi_on_demand", false)
-            end,
-        },
-        self:serverItem(),
-        {
-            text = _("Disconnect this device"),
-            keep_menu_open = false,
-            callback = function()
-                self.settings:disconnect()
-                self.document_state = nil
-                self:notify(_("Disconnected. Your reading stays in Seekquel."))
-            end,
-        },
-    }
+        })
+    end
+
+    table.insert(items, self:serverItem())
+    table.insert(items, {
+        text = _("Disconnect this device"),
+        keep_menu_open = false,
+        callback = function()
+            self.settings:disconnect()
+            self.document_state = nil
+            self:notify(_("Disconnected. Your reading stays in Seekquel."))
+        end,
+    })
+
+    return items
 end
 
 function Seekquel:serverItem()
@@ -531,37 +892,62 @@ function Seekquel:beginPairing()
 end
 
 function Seekquel:showPairingCode(started)
-    local message = InfoMessage:new({
-        text = T(
+    local interval = math.max(tonumber(started.interval) or PAIRING_POLL_SECONDS, PAIRING_MIN_POLL_SECONDS)
+    local lifetime = tonumber(started.expires_in) or PAIRING_FALLBACK_SECONDS
+
+    self.pairing_active = true
+
+    local dialog
+    dialog = ButtonDialog:new({
+        title = T(
             _("On your phone, open Settings, Integrations, KOReader and enter:\n\n%1\n\nWaiting for you to approve it."),
             started.user_code
         ),
-        timeout = nil,
+        title_align = "center",
+        buttons = {
+            { {
+                text = _("Cancel"),
+                callback = function()
+                    self.pairing_active = false
+                    UIManager:close(dialog)
+                end,
+            } },
+        },
     })
 
-    UIManager:show(message)
-    self:pollPairing(started.device_code, message, 0)
+    UIManager:show(dialog)
+    self:pollPairing(started.device_code, dialog, os.time() + lifetime, interval)
 end
 
-function Seekquel:pollPairing(device_code, message, attempt)
-    if attempt >= PAIRING_MAX_POLLS then
-        UIManager:close(message)
+function Seekquel:pollPairing(device_code, dialog, deadline, interval)
+    if not self.pairing_active then
+        return
+    end
+
+    if os.time() >= deadline then
+        self.pairing_active = false
+        UIManager:close(dialog)
         self:notify(_("That code expired. Try connecting again."))
 
         return
     end
 
-    UIManager:scheduleIn(PAIRING_POLL_SECONDS, function()
+    UIManager:scheduleIn(interval, function()
+        if not self.pairing_active then
+            return
+        end
+
         local collected = self.api:pollPairing(device_code)
 
         if collected ~= nil and collected.key ~= nil then
-            UIManager:close(message)
+            self.pairing_active = false
+            UIManager:close(dialog)
             self:finishPairing(collected)
 
             return
         end
 
-        self:pollPairing(device_code, message, attempt + 1)
+        self:pollPairing(device_code, dialog, deadline, interval)
     end)
 end
 
@@ -627,6 +1013,8 @@ end
 
 function Seekquel:searchAndChoose(query)
     if query == nil or #query < SEARCH_MIN_LENGTH then
+        self:notify(_("Type at least a couple of letters to search."))
+
         return
     end
 

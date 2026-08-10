@@ -8,6 +8,15 @@ local FILENAME = "seekquel.lua"
 
 local DEFAULT_SYNC_URL = "https://api.seekquel.app/koreader"
 local DEFAULT_PAGES_BEFORE_PUSH = 60
+local SECONDS_PER_DAY = 86400
+local LEGACY_HISTORY_DAYS = 7
+
+local PER_BOOK_KEYS = {
+    "history_synced",
+    "details_sent",
+    "cover_sent",
+    "highlights_sent",
+}
 
 function Settings:new()
     local instance = setmetatable({}, self)
@@ -56,6 +65,14 @@ end
 function Settings:disconnect()
     self:set("key", nil)
     self:set("device_id", nil)
+    self:set("applied_settings_revision", nil)
+    self:set("timezone_offset", nil)
+    self:set("latest_version", nil)
+    self:set("pending_restart", nil)
+
+    for _index, key in ipairs(PER_BOOK_KEYS) do
+        self:set(key, nil)
+    end
 end
 
 function Settings:isEnabled(key, fallback)
@@ -73,16 +90,123 @@ function Settings:pagesBeforePush()
     return self:get("pages_before_push", DEFAULT_PAGES_BEFORE_PUSH)
 end
 
-function Settings:hasSyncedHistory(digest)
-    local synced = self:get("history_synced", {})
+function Settings:markBusy(label)
+    self:set("busy", { label = label, at = os.time() })
+end
 
-    return synced[digest] == true
+function Settings:clearBusy()
+    self:set("busy", nil)
+end
+
+function Settings:takeInterruption()
+    local busy = self:get("busy")
+
+    if busy == nil then
+        return nil
+    end
+
+    self:set("busy", nil)
+    self:set("last_interruption", busy)
+
+    return busy
+end
+
+function Settings:lastInterruption()
+    return self:get("last_interruption")
+end
+
+function Settings:clearInterruption()
+    self:set("last_interruption", nil)
+end
+
+function Settings:recordTiming(label, seconds)
+    local slowest = self:get("slowest_call")
+
+    if slowest ~= nil and slowest.seconds >= seconds then
+        return
+    end
+
+    self:set("slowest_call", { label = label, seconds = seconds, at = os.time() })
+end
+
+function Settings:slowestCall()
+    return self:get("slowest_call")
+end
+
+function Settings:lastSync()
+    return self:get("last_sync_at"), self:get("last_sync_ok")
+end
+
+function Settings:recordSync(ok)
+    self:set("last_sync_at", os.time())
+    self:set("last_sync_ok", ok == true)
+end
+
+function Settings:appliedSettingsRevision()
+    return tonumber(self:get("applied_settings_revision", 0)) or 0
+end
+
+function Settings:markSettingsApplied(revision)
+    self:set("applied_settings_revision", revision)
+end
+
+function Settings:latestVersion()
+    return self:get("latest_version")
+end
+
+function Settings:setLatestVersion(value)
+    self:set("latest_version", value)
+end
+
+function Settings:pendingRestart()
+    return self:get("pending_restart")
+end
+
+function Settings:setPendingRestart(from, to)
+    self:set("pending_restart", from and { from = from, to = to } or nil)
+end
+
+function Settings:timezoneOffset()
+    return tonumber(self:get("timezone_offset"))
+end
+
+function Settings:setTimezoneOffset(minutes)
+    self:set("timezone_offset", minutes)
+end
+
+function Settings:historySyncedAt(digest)
+    local synced = self:get("history_synced", {})
+    local stamp = synced[digest]
+
+    if stamp == true then
+        return os.time() - (LEGACY_HISTORY_DAYS * SECONDS_PER_DAY)
+    end
+
+    return tonumber(stamp)
 end
 
 function Settings:markHistorySynced(digest)
     local synced = self:get("history_synced", {})
-    synced[digest] = true
+    synced[digest] = os.time()
     self:set("history_synced", synced)
+end
+
+function Settings:sentHighlights(digest)
+    local sent = self:get("highlights_sent", {})
+
+    return sent[digest] or {}
+end
+
+function Settings:markHighlightsSent(digest, fingerprints)
+    local sent = self:get("highlights_sent", {})
+    local book = sent[digest] or {}
+
+    for external_id, fingerprint in pairs(fingerprints) do
+        book[external_id] = fingerprint
+    end
+
+    sent[digest] = book
+    self:set("highlights_sent", sent)
 end
 
 function Settings:hasSentDetails(digest)

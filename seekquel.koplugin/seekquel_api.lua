@@ -8,8 +8,15 @@ local url = require("socket.url")
 local Api = {}
 Api.__index = Api
 
-local BLOCK_TIMEOUT = 10
-local TOTAL_TIMEOUT = 25
+local BLOCK_TIMEOUT = 5
+local TOTAL_TIMEOUT = 12
+local UPLOAD_BLOCK_TIMEOUT = 10
+local UPLOAD_TOTAL_TIMEOUT = 30
+local DOWNLOAD_BLOCK_TIMEOUT = 15
+local DOWNLOAD_TOTAL_TIMEOUT = 120
+local SLOW_CALL_SECONDS = 5
+
+local UPLOAD_TIMEOUT = { block = UPLOAD_BLOCK_TIMEOUT, total = UPLOAD_TOTAL_TIMEOUT }
 
 local function withoutNulls(value)
     if type(value) ~= "table" then
@@ -35,7 +42,7 @@ function Api:isConfigured()
     return self.settings:isConnected()
 end
 
-function Api:request(method, path, body, query)
+function Api:request(method, path, body, query, timeout)
     local endpoint = self.settings:syncUrl() .. path
 
     if query then
@@ -69,7 +76,15 @@ function Api:request(method, path, body, query)
         headers["content-length"] = tostring(#payload)
     end
 
-    socketutil:set_timeout(BLOCK_TIMEOUT, TOTAL_TIMEOUT)
+    local block = timeout and timeout.block or BLOCK_TIMEOUT
+    local total = timeout and timeout.total or TOTAL_TIMEOUT
+
+    socketutil:set_timeout(block, total)
+
+    local label = method .. " " .. path
+    local started = os.time()
+
+    self.settings:markBusy(label)
 
     local ok, result, code = pcall(requester, {
         url = endpoint,
@@ -80,6 +95,15 @@ function Api:request(method, path, body, query)
     })
 
     socketutil:reset_timeout()
+
+    local elapsed = os.time() - started
+
+    self.settings:clearBusy()
+    self.settings:recordTiming(label, elapsed)
+
+    if elapsed >= SLOW_CALL_SECONDS then
+        logger.warn("Seekquel:", label, "took", elapsed, "seconds")
+    end
 
     if not ok or result == nil then
         logger.warn("Seekquel: could not reach", method, path, tostring(code))
@@ -109,6 +133,52 @@ function Api:request(method, path, body, query)
     end
 
     return withoutNulls(decoded), status
+end
+
+function Api:pluginManifest()
+    return self:request("GET", "/plugin/manifest")
+end
+
+function Api:downloadPlugin(destination)
+    local endpoint = self.settings:syncUrl() .. "/plugin.zip"
+    local parsed = url.parse(endpoint)
+
+    if not parsed then
+        return false
+    end
+
+    local file = io.open(destination, "wb")
+
+    if file == nil then
+        return false
+    end
+
+    local requester = parsed.scheme == "https" and require("ssl.https").request or http.request
+    local label = "GET /plugin.zip"
+
+    socketutil:set_timeout(DOWNLOAD_BLOCK_TIMEOUT, DOWNLOAD_TOTAL_TIMEOUT)
+    self.settings:markBusy(label)
+
+    local ok, result, code = pcall(requester, {
+        url = endpoint,
+        method = "GET",
+        headers = { ["accept"] = "application/zip" },
+        sink = ltn12.sink.file(file),
+    })
+
+    socketutil:reset_timeout()
+    self.settings:clearBusy()
+
+    local status = tonumber(code)
+
+    if not ok or result == nil or status == nil or status < 200 or status > 299 then
+        logger.warn("Seekquel: could not download the add-on", tostring(code))
+        os.remove(destination)
+
+        return false
+    end
+
+    return true
 end
 
 function Api:encodeQuery(query)
@@ -157,7 +227,7 @@ function Api:pushCover(digest, image, content_type)
     local body = self:request("PUT", "/documents/" .. digest .. "/cover", {
         image = image,
         content_type = content_type,
-    })
+    }, nil, UPLOAD_TIMEOUT)
 
     return body and body.data or nil
 end
@@ -187,11 +257,11 @@ function Api:searchBooks(query)
 end
 
 function Api:pushSessions(digest, days)
-    return self:request("POST", "/sessions", { document = digest, days = days })
+    return self:request("POST", "/sessions", { document = digest, days = days }, nil, UPLOAD_TIMEOUT)
 end
 
 function Api:pushHighlights(digest, highlights)
-    return self:request("POST", "/highlights", { document = digest, highlights = highlights })
+    return self:request("POST", "/highlights", { document = digest, highlights = highlights }, nil, UPLOAD_TIMEOUT)
 end
 
 return Api

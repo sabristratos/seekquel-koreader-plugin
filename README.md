@@ -23,6 +23,18 @@ somewhere with a real keyboard.
 
 You need a Seekquel account. The plugin is useless without one.
 
+### Updating
+
+You only do the copying above once. After that, when Seekquel is serving a newer version
+the Seekquel menu offers **Update the add-on**; tap it, and KOReader will ask you to
+restart. KOReader itself has no way to install or update an add-on, which is why this is
+built in rather than something the reader does for you.
+
+It never updates on its own, and it only ever downloads from the server address this
+device is set to. The download is checked before anything is replaced, so a connection
+that drops part way leaves the copy you are running untouched. If your device will not let
+the add-on write to its own folder, it says so and you copy the files across as above.
+
 ## What it sends
 
 | What | When |
@@ -50,11 +62,19 @@ The first time you open a book, Seekquel asks which catalogue book the file is. 
 title, pick from the list, and it remembers. The answer is stored against the file, so it
 holds even if you move the book to another device.
 
-A book the catalogue does not have becomes your own private book. Sideloaded PDFs and
-mangled filenames never end up in the shared catalogue.
+A file Seekquel cannot place is left for you to answer rather than saved as a book on your
+behalf. Pick the catalogue book it is, or choose **Not in the catalogue** and it becomes
+your own private book. Sideloaded PDFs and mangled filenames never end up in the shared
+catalogue either way.
+
+That is deliberate and it replaced the opposite. A file used to be saved as your own book
+the moment nothing matched it, which for a filename carrying a series and a volume number
+meant a second copy of a book already in your library, shown on your profile as newly
+started. A guess should not speak for you.
 
 Until a file is linked, no reading time or highlights are sent for it. Minutes filed
-against the wrong book are worse than minutes nobody recorded.
+against the wrong book are worse than minutes nobody recorded. Nothing is lost while it
+waits: your place is held, and everything catches up once you answer.
 
 ## Settings
 
@@ -62,19 +82,41 @@ Everything is under **Tools > Seekquel > Settings**.
 
 - Send reading time, send highlights, and mark finished at the end are all on by default.
 - **Sync while reading** off means it only syncs when you close a book.
+- **Send highlights automatically** off means your passages stay on the device until you
+  tap **Sync now**. Your place in the book and your reading time keep syncing either way.
 - **Turn on Wi-Fi to sync** is off by default. With it off, syncing waits for a connection
   you made yourself, and your radio stays off.
 
-The switches live on the device. Seekquel shows you what each device is set to send, but
-it does not change them from the web.
+**Sync status** tells you when the last sync was and whether all of it went through, which
+book the open file is linked to, and how many highlights are sitting on it. If a sync
+stopped part way through, it says which step it stopped on.
+
+That last part is worth knowing about, because it is how a freeze gets reported at all. The
+add-on writes down what it is about to do before each message it sends and clears it once
+the message is answered. If your reader dies in between, the note survives, and the next
+time it connects it tells Seekquel what it stopped on. Nothing about what you highlighted
+is included, only the name of the step.
+
+You can set these switches here or in Seekquel, under Settings, Integrations, KOReader.
+The app records what you asked for and this device applies it the next time it connects,
+so a device that is off or out of range simply picks it up later. Changing a switch here
+always wins, because it takes effect immediately and works with no connection at all.
 
 ## How it works
 
 Some of this is worth knowing before you file a bug.
 
-**Nothing blocks a page turn.** Every network call is fire and forget behind a debounce,
-every failure is a log line, and a device out of range simply syncs later. You should
-never learn that this plugin exists by waiting for it.
+**A page turn is never waited on, but a sync is not free either.** Turning pages only ever
+schedules a sync, and never waits for one, so reading is unaffected. The sync itself does
+block: each message waits up to twelve seconds for an answer (thirty for a cover or a long
+backlog), and a sync sends a few, so on a poor connection the screen can sit still for a
+while once one starts. A sync that has already taken twenty seconds stops there and leaves
+the rest for the next one, so a bad connection costs you a delay rather than a longer wait.
+Describing a book to Seekquel is the slowest part and no longer happens as you open it: the
+description follows twenty seconds later and the cover a minute in, and only if Wi-Fi is
+already on. Syncs happen when you close a book, when the device sleeps, when it finds a
+network, and every sixty pages if **Sync while reading** is on. If yours freezes, **Sync
+status** will say what it stopped on, and that is reported so it can be fixed.
 
 **Nothing is guessed at.** A file is linked to a catalogue book once, by you. Until then
 no reading time or highlights are sent for it, and the server refuses them anyway.
@@ -86,9 +128,10 @@ property of the scheme, not a bug, and it is why linking is asked of you once pe
 
 **Reading time comes from KOReader's statistics plugin**, not from a timer of our own.
 That plugin already records a row per page turn with its duration, which is a far better
-record of a sitting than anything we could ask you to start and stop. Days are grouped in
-local time, because the day you believe you read on is the day your lamp was on, not the
-UTC date. A sync after a week offline still files each session on the day it happened.
+record of a sitting than anything we could ask you to start and stop. Days are grouped by
+the time zone on your Seekquel account, because the day you believe you read on is the day
+your lamp was on, and the clock on an e-reader is often not set to where you live. However
+long you have been offline, every session still files on the day it happened.
 
 **Whole minutes only.** A day that adds up to less than a minute is carried over rather
 than rounded away, so forty seconds a night still counts eventually.
@@ -107,9 +150,10 @@ is refused, that is why.
 
 ## Status
 
-This has been run against real KOReader in an emulator, end to end, but **not yet on a
-physical e-reader**. Treat the first install as a test, and please report anything that
-misbehaves.
+Run end to end against real KOReader in an emulator, and **in testing on real e-readers
+since August 2026**. Treat it as early: freezes during syncing have been reported and are
+being chased. Please report anything that misbehaves, and include what **Sync status**
+says.
 
 ## Privacy
 

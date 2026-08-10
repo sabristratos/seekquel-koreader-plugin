@@ -6,7 +6,6 @@ local Stats = {}
 Stats.__index = Stats
 
 local DB_NAME = "statistics.sqlite3"
-local SECONDS_PER_DAY = 86400
 local MAX_DAYS = 400
 
 function Stats:new()
@@ -17,8 +16,8 @@ function Stats:path()
     return DataStorage:getSettingsDir() .. "/" .. DB_NAME
 end
 
-function Stats:daysFor(digest, since_days)
-    local rows = self:query(digest, since_days)
+function Stats:daysFor(digest, since_time, offset_minutes)
+    local rows = self:query(digest, since_time, offset_minutes)
 
     if rows == nil then
         return {}
@@ -27,7 +26,17 @@ function Stats:daysFor(digest, since_days)
     return rows
 end
 
-function Stats:query(digest, since_days)
+function Stats:dayModifier(offset_minutes)
+    local offset = tonumber(offset_minutes)
+
+    if offset == nil then
+        return "'localtime'"
+    end
+
+    return string.format("'%+d minutes'", math.floor(offset))
+end
+
+function Stats:query(digest, since_time, offset_minutes)
     local ok, result = pcall(function()
         local conn = SQ3.open(self:path(), "ro")
 
@@ -46,14 +55,10 @@ function Stats:query(digest, since_days)
             return nil
         end
 
-        local floor = 0
-
-        if since_days ~= nil then
-            floor = os.time() - (since_days * SECONDS_PER_DAY)
-        end
+        local floor = math.max(0, math.floor(tonumber(since_time) or 0))
 
         local sql = string.format([[
-            SELECT date(start_time, 'unixepoch', 'localtime') AS day,
+            SELECT date(start_time, 'unixepoch', %s) AS day,
                    SUM(duration) AS seconds,
                    COUNT(DISTINCT page) AS pages
             FROM page_stat_data
@@ -61,7 +66,7 @@ function Stats:query(digest, since_days)
             GROUP BY day
             ORDER BY day DESC
             LIMIT %d;
-        ]], tonumber(book_id), floor, MAX_DAYS)
+        ]], self:dayModifier(offset_minutes), tonumber(book_id), floor, MAX_DAYS)
 
         local columns = conn:exec(sql)
         conn:close()

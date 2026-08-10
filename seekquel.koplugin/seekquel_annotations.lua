@@ -11,22 +11,27 @@ end
 
 function Annotations:collect(annotations)
     if type(annotations) ~= "table" then
-        return {}
+        return {}, 0
     end
 
     local collected = {}
+    local total = 0
 
     for _, annotation in ipairs(annotations) do
         if self:isHighlight(annotation) then
-            table.insert(collected, self:toPayload(annotation))
-        end
+            total = total + 1
 
-        if #collected >= MAX_HIGHLIGHTS then
-            break
+            if #collected < MAX_HIGHLIGHTS then
+                table.insert(collected, self:toPayload(annotation))
+            end
         end
     end
 
-    return collected
+    return collected, total
+end
+
+function Annotations:fingerprint(payload)
+    return md5(tostring(payload.text or "") .. "|" .. tostring(payload.note or ""))
 end
 
 function Annotations:isHighlight(annotation)
@@ -47,10 +52,44 @@ function Annotations:toPayload(annotation)
     }
 end
 
-function Annotations:identify(annotation)
-    local anchor = annotation.pos0 or annotation.page or annotation.pageno or ""
+function Annotations:anchor(value)
+    if type(value) == "string" then
+        return value
+    end
 
-    return md5(tostring(annotation.datetime or "") .. "|" .. tostring(anchor))
+    if type(value) == "number" then
+        return tostring(value)
+    end
+
+    if type(value) ~= "table" then
+        return ""
+    end
+
+    local page = value.page or value.pageno
+
+    if page == nil then
+        return ""
+    end
+
+    return table.concat({
+        tostring(page),
+        tostring(value.x or ""),
+        tostring(value.y or ""),
+    }, ",")
+end
+
+function Annotations:identify(annotation)
+    local anchor = self:anchor(annotation.pos0)
+
+    if anchor == "" then
+        anchor = self:anchor(annotation.page)
+    end
+
+    if anchor == "" then
+        anchor = self:anchor(annotation.pageno)
+    end
+
+    return md5(tostring(annotation.datetime or "") .. "|" .. anchor)
 end
 
 return Annotations
