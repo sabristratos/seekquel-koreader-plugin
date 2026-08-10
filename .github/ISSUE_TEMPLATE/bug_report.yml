@@ -1,0 +1,73 @@
+name: Bug report
+description: Something the plugin does wrong on a real device
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports from real e-readers are the most useful thing you can send. Please
+        redact your device key if it appears anywhere, it looks like `ABCD-EFGH-JKLM-NPQR`.
+
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      placeholder: Kobo Clara HD, Kindle Paperwhite 4, Android phone
+    validations:
+      required: true
+
+  - type: input
+    id: koreader
+    attributes:
+      label: KOReader version
+      description: From Help, About
+      placeholder: v2026.07.1
+    validations:
+      required: true
+
+  - type: input
+    id: plugin
+    attributes:
+      label: Plugin version
+      placeholder: 1.0.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      placeholder: |
+        1. Open a book
+        2. Tools, Seekquel, Sync now
+        3. ...
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log lines
+      description: >
+        From KOReader's crash.log, next to the KOReader binary on most devices.
+        Lines from this plugin are prefixed `Seekquel:`.
+      render: text
+
+  - type: checkboxes
+    id: self-hosted
+    attributes:
+      label: Server
+      options:
+        - label: I am pointing the plugin at my own Seekquel rather than seekquel.app

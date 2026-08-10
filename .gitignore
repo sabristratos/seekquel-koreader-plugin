@@ -1,0 +1,11 @@
+*.zip
+.DS_Store
+Thumbs.db
+
+# Books and reader state used by the emulator, never committed
+emulator/books/*
+!emulator/books/.gitkeep
+emulator/state/
+
+# Written by the harness while it waits for a pairing to be approved
+spec/.pairing-code

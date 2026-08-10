@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the version in the plugin
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          declared=$(grep -oP 'local VERSION = "\K[^"]+' seekquel.koplugin/main.lua)
+          if [ "$tag" != "$declared" ]; then
+            echo "Tag $tag does not match VERSION $declared in main.lua"
+            exit 1
+          fi
+
+      - name: Package the plugin
+        run: zip -r "seekquel.koplugin-${GITHUB_REF_NAME}.zip" seekquel.koplugin
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: seekquel.koplugin-${{ github.ref_name }}.zip
+          generate_release_notes: true
