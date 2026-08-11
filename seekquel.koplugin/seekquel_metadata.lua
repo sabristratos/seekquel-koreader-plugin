@@ -1,13 +1,9 @@
-local logger = require("logger")
-local mime = require("mime")
-
 local Metadata = {}
 Metadata.__index = Metadata
 
 local MAX_CHAPTERS = 500
 local MAX_DESCRIPTION = 8000
 local MAX_TEXT = 500
-local MAX_COVER_BYTES = 4 * 1024 * 1024
 
 function Metadata:new()
     return setmetatable({}, self)
@@ -120,72 +116,6 @@ function Metadata:chapters(ui)
     end
 
     return chapters
-end
-
-function Metadata:cover(ui)
-    if ui == nil or ui.document == nil then
-        return nil, nil
-    end
-
-    local ok, image = pcall(function()
-        return ui.document:getCoverPageImage()
-    end)
-
-    if not ok or image == nil then
-        return nil, nil
-    end
-
-    local stub = os.tmpname()
-    local path = stub .. ".png"
-
-    local function discard()
-        os.remove(path)
-        os.remove(stub)
-    end
-
-    local written = pcall(function()
-        image:writePNG(path)
-    end)
-
-    pcall(function()
-        image:free()
-    end)
-
-    if not written then
-        discard()
-
-        return nil, nil
-    end
-
-    local handle = io.open(path, "rb")
-
-    if handle == nil then
-        discard()
-
-        return nil, nil
-    end
-
-    local bytes = handle:read("*a")
-    handle:close()
-    discard()
-
-    if bytes == nil or #bytes == 0 then
-        return nil, nil
-    end
-
-    if #bytes > MAX_COVER_BYTES then
-        logger.warn("Seekquel: cover is too large to send", #bytes)
-
-        return nil, nil
-    end
-
-    local encoded, remainder = mime.b64(bytes)
-
-    if remainder ~= nil and remainder ~= "" then
-        encoded = encoded .. (mime.b64(remainder, "") or "")
-    end
-
-    return encoded, "image/png"
 end
 
 function Metadata:text(value, limit)

@@ -4,6 +4,44 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.5] - 2026-08-11
+
+### Fixed
+
+- **Switching away from KOReader now syncs properly, not just your place in the book.**
+  Closing a book has always sent everything; backgrounding the app sent only your page, so
+  reading time and highlights waited until you came back to the book. That is exactly
+  backwards: the moment you leave KOReader is the moment you open Seekquel. It now sends
+  your place, your reading time and your highlights on the way out, with a five second
+  ceiling on the whole thing and two seconds on any single request, so it cannot hold the
+  screen the way the old version did. Anything that does not fit still goes when you
+  return.
+
+## [1.4.4] - 2026-08-11
+
+### Fixed
+
+- **Your place in the book is sent again when you put it down.** 1.4.1 stopped sending
+  anything at all when the screen went off, to keep the app from being closed mid-sync, and
+  that went too far: putting the book down and opening Seekquel showed where you were the
+  last time it synced rather than where you actually are. It now sends your place, one
+  short request with a two second limit, and only when the page has actually moved.
+  Everything else still waits until you come back to the book.
+- **Your place is sent more often while you read**, every twenty pages instead of every
+  sixty, so what Seekquel shows keeps up with you even if the send on the way out fails.
+
+## [1.4.3] - 2026-08-11
+
+### Removed
+
+- **The add-on no longer sends book covers, because doing so killed KOReader.** A minute
+  after a book was opened it read the cover out of the file to upload it, and reading a
+  cover means decoding a picture. On a Samsung phone that crashed the app outright, twice,
+  on two different books. Covers only ever applied to a book you added yourself that had
+  none yet, so nothing that comes from the catalogue is affected; for one of your own, add
+  the cover in the app instead. Everything else the add-on reads out of a file, the
+  description, the length, the contents and the rest, is unchanged.
+
 ## [1.4.1] - 2026-08-11
 
 ### Fixed

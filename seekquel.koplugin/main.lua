@@ -21,15 +21,15 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.4.1"
+local VERSION = "1.4.5"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
 local PUSH_DEBOUNCE_SECONDS = 5
 local OPEN_DELAY_SECONDS = 3
 local METADATA_DELAY_SECONDS = 20
-local COVER_DELAY_SECONDS = 60
 local SYNC_BUDGET_SECONDS = 20
+local LEAVING_BUDGET_SECONDS = 5
 local HISTORY_OVERLAP_DAYS = 2
 local SECONDS_PER_DAY = 86400
 local SEARCH_MIN_LENGTH = 2
@@ -72,6 +72,7 @@ function Seekquel:init()
     self.digest = nil
     self.document_state = nil
     self.pages_turned = 0
+    self.pushed_progress = nil
     self.push_scheduled = false
     self.pairing_active = false
     self.run_deadline = nil
@@ -93,6 +94,7 @@ function Seekquel:onReaderReady()
 
     self.digest = self:documentDigest()
     self.pages_turned = 0
+    self.pushed_progress = nil
 
     if self.digest == nil then
         return
@@ -253,19 +255,13 @@ function Seekquel:ensureDocument()
 end
 
 function Seekquel:scheduleFileDetails(digest)
-    if self.settings:hasSentDetails(digest) and self.settings:hasSentCover(digest) then
+    if self.settings:hasSentDetails(digest) then
         return
     end
 
     self:scheduleTask(METADATA_DELAY_SECONDS, function()
         self:whenIdle(digest, function()
             self:sendFileMetadata()
-        end)
-    end)
-
-    self:scheduleTask(COVER_DELAY_SECONDS, function()
-        self:whenIdle(digest, function()
-            self:sendFileCover()
         end)
     end)
 end
@@ -302,34 +298,27 @@ function Seekquel:sendFileMetadata()
     end
 end
 
-function Seekquel:sendFileCover()
-    if self.digest == nil or self.settings:hasSentCover(self.digest) then
-        return
-    end
-
-    local image, content_type = self.metadata_reader:cover(self.ui)
-
-    if image == nil then
-        self.settings:markCoverSent(self.digest)
-
-        return
-    end
-
-    local answer = self.api:pushCover(self.digest, image, content_type)
-
-    if type(answer) == "table" and answer.reason ~= "no_private_book" then
-        self.settings:markCoverSent(self.digest)
-    end
-end
-
-function Seekquel:sendProgress()
+function Seekquel:sendProgress(timeout)
     local progress, percentage = self:currentPosition()
 
     if progress == nil then
         return true
     end
 
-    return self.api:pushProgress(self.digest, progress, percentage, self:deviceName(), self:metadata()) ~= nil
+    local sent = self.api:pushProgress(
+        self.digest,
+        progress,
+        percentage,
+        self:deviceName(),
+        self:metadata(),
+        timeout
+    ) ~= nil
+
+    if sent then
+        self.pushed_progress = progress
+    end
+
+    return sent
 end
 
 function Seekquel:onPosUpdate()
@@ -345,11 +334,16 @@ function Seekquel:onCloseDocument()
 end
 
 function Seekquel:onSuspend()
-    self:cancelScheduled()
+    self:leaveQuietly()
 end
 
 function Seekquel:onRequestSuspend()
+    self:leaveQuietly()
+end
+
+function Seekquel:leaveQuietly()
     self:cancelScheduled()
+    self:pushNow(false, true)
 end
 
 function Seekquel:onResume()
@@ -408,15 +402,15 @@ function Seekquel:schedulePush()
     end)
 end
 
-function Seekquel:beginRun()
-    self.run_deadline = os.time() + SYNC_BUDGET_SECONDS
+function Seekquel:beginRun(seconds)
+    self.run_deadline = os.time() + (seconds or SYNC_BUDGET_SECONDS)
 end
 
 function Seekquel:hasBudget()
     return self.run_deadline == nil or os.time() < self.run_deadline
 end
 
-function Seekquel:pushNow(asked_for)
+function Seekquel:pushNow(asked_for, leaving)
     if not self:isReady() or self.digest == nil then
         return
     end
@@ -425,11 +419,12 @@ function Seekquel:pushNow(asked_for)
     local highlights = self:collectHighlights(asked_for)
     local pending, fingerprints = self:unsentHighlights(digest, highlights)
     local days = self.settings:isEnabled("send_reading_time", true) and self:readingDays(digest) or {}
+    local timeout = leaving and Api.LEAVING_TIMEOUT or nil
 
-    self:whenOnline(function()
-        self:beginRun()
+    local run = function()
+        self:beginRun(leaving and LEAVING_BUDGET_SECONDS or nil)
 
-        local sent = self:sendProgress()
+        local sent = self:sendProgress(timeout)
 
         if not self:refreshLink(digest) then
             self.settings:recordSync(sent)
@@ -440,7 +435,7 @@ function Seekquel:pushNow(asked_for)
         if #days > 0 then
             if not self:hasBudget() then
                 sent = false
-            elseif type(self.api:pushSessions(digest, days)) == "table" then
+            elseif type(self.api:pushSessions(digest, days, timeout)) == "table" then
                 self.settings:markHistorySynced(digest)
             else
                 sent = false
@@ -450,21 +445,33 @@ function Seekquel:pushNow(asked_for)
         if #pending > 0 then
             if not self:hasBudget() then
                 sent = false
-            elseif self.api:pushHighlights(digest, pending) ~= nil then
+            elseif self.api:pushHighlights(digest, pending, timeout) ~= nil then
                 self.settings:markHighlightsSent(digest, fingerprints)
             else
                 sent = false
             end
         end
 
-        self:sendStatusChange(digest)
-
         if self:hasBudget() then
+            self:sendStatusChange(digest)
+        end
+
+        if not leaving and self:hasBudget() then
             self:sendFileMetadata()
         end
 
         self.settings:recordSync(sent)
-    end)
+    end
+
+    if leaving then
+        if NetworkMgr:isOnline() and self.api:isConfigured() then
+            run()
+        end
+
+        return
+    end
+
+    self:whenOnline(run)
 end
 
 function Seekquel:documentStatus()

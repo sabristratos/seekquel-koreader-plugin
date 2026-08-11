@@ -239,12 +239,10 @@ plugin:pushNow()
 local document = asReader("GET", "/api/integrations/devices")
 check("the reader's devices list still answers", document.data ~= nil)
 
-step("9. Going to sleep stops, and waking picks it up again")
-local calls = 0
+step("9. Putting the book down syncs, on a short leash")
+local leaving = {}
 local original_push = plugin.pushNow
-local original_progress = plugin.api.pushProgress
-plugin.pushNow = function() calls = calls + 1 end
-plugin.api.pushProgress = function() calls = calls + 1 return {} end
+plugin.pushNow = function(_self, _asked_for, is_leaving) table.insert(leaving, is_leaving) end
 
 local function forget()
     plugin.push_scheduled = false
@@ -256,29 +254,30 @@ plugin:schedulePush()
 check("a page turn queues a sync", plugin.push_scheduled == true, tostring(plugin.push_scheduled))
 
 plugin:onSuspend()
-check("a Kobo or Kindle sleeping drops the queued sync",
+check("sleeping drops the queued sync",
     plugin.push_scheduled == false and next(plugin.scheduled) == nil, "still queued")
+check("sleeping syncs on the way out", leaving[1] == true, tostring(leaving[1]))
 
-forget()
-plugin:schedulePush()
 plugin:onRequestSuspend()
-check("an Android reader sleeping drops it too", next(plugin.scheduled) == nil, "still queued")
-check("sleeping never touches the network", calls == 0, "calls = " .. calls)
+check("an Android reader backgrounding syncs too", leaving[2] == true, tostring(leaving[2]))
 
+plugin.pushNow = original_push
 forget()
-plugin.api.pushProgress = original_progress
+
+check("the leaving budget is far shorter than a normal sync",
+    require("seekquel_api").LEAVING_TIMEOUT.total <= 3,
+    tostring(require("seekquel_api").LEAVING_TIMEOUT.total))
 
 plugin:onResume()
-check("waking queues the sync that sleeping dropped", plugin.push_scheduled == true,
+check("waking still catches up on whatever did not fit", plugin.push_scheduled == true,
     tostring(plugin.push_scheduled))
 
 forget()
 plugin:onRequestResume()
-check("an Android reader waking queues it too", plugin.push_scheduled == true,
+check("an Android reader waking catches up too", plugin.push_scheduled == true,
     tostring(plugin.push_scheduled))
 
 forget()
-plugin.pushNow = original_push
 
 step("10. A status set in KOReader's own screens reaches the account")
 check("opening the book remembers the status it had, so the app's is not overwritten",

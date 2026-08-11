@@ -7,14 +7,13 @@ Settings.__index = Settings
 local FILENAME = "seekquel.lua"
 
 local DEFAULT_SYNC_URL = "https://api.seekquel.app/koreader"
-local DEFAULT_PAGES_BEFORE_PUSH = 60
+local DEFAULT_PAGES_BEFORE_PUSH = 20
 local SECONDS_PER_DAY = 86400
 local LEGACY_HISTORY_DAYS = 7
 
 local PER_BOOK_KEYS = {
     "history_synced",
     "details_sent",
-    "cover_sent",
     "highlights_sent",
     "status_seen",
 }
@@ -262,18 +261,6 @@ function Settings:markDetailsSent(digest)
     local sent = self:get("details_sent", {})
     sent[digest] = true
     self:set("details_sent", sent)
-end
-
-function Settings:hasSentCover(digest)
-    local sent = self:get("cover_sent", {})
-
-    return sent[digest] == true
-end
-
-function Settings:markCoverSent(digest)
-    local sent = self:get("cover_sent", {})
-    sent[digest] = true
-    self:set("cover_sent", sent)
 end
 
 return Settings

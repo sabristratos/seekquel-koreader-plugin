@@ -11,6 +11,8 @@ local UPLOAD_BLOCK_TIMEOUT = 10
 local UPLOAD_TOTAL_TIMEOUT = 30
 local DOWNLOAD_BLOCK_TIMEOUT = 15
 local DOWNLOAD_TOTAL_TIMEOUT = 120
+local LEAVING_BLOCK_TIMEOUT = 1
+local LEAVING_TOTAL_TIMEOUT = 2
 local SLOW_CALL_SECONDS = 5
 local BACKOFF_SECONDS = 120
 
@@ -18,6 +20,7 @@ local UPLOAD_TIMEOUT = { block = UPLOAD_BLOCK_TIMEOUT, total = UPLOAD_TOTAL_TIME
 
 local Api = {}
 Api.__index = Api
+Api.LEAVING_TIMEOUT = { block = LEAVING_BLOCK_TIMEOUT, total = LEAVING_TOTAL_TIMEOUT }
 
 local function withoutNulls(value)
     if type(value) ~= "table" then
@@ -220,7 +223,7 @@ function Api:reportDevice(payload)
     return self:request("PUT", "/device", payload)
 end
 
-function Api:pushProgress(digest, progress, percentage, device, metadata)
+function Api:pushProgress(digest, progress, percentage, device, metadata, timeout)
     return self:request("PUT", "/syncs/progress", {
         document = digest,
         progress = tostring(progress),
@@ -228,20 +231,11 @@ function Api:pushProgress(digest, progress, percentage, device, metadata)
         device = device,
         device_id = self.settings:get("device_id"),
         metadata = metadata,
-    })
+    }, nil, timeout)
 end
 
 function Api:pushMetadata(digest, metadata)
     local body = self:request("PUT", "/documents/" .. digest .. "/metadata", metadata)
-
-    return body and body.data or nil
-end
-
-function Api:pushCover(digest, image, content_type)
-    local body = self:request("PUT", "/documents/" .. digest .. "/cover", {
-        image = image,
-        content_type = content_type,
-    }, nil, UPLOAD_TIMEOUT)
 
     return body and body.data or nil
 end
@@ -276,12 +270,12 @@ function Api:searchBooks(query)
     return body and body.data or {}
 end
 
-function Api:pushSessions(digest, days)
-    return self:request("POST", "/sessions", { document = digest, days = days }, nil, UPLOAD_TIMEOUT)
+function Api:pushSessions(digest, days, timeout)
+    return self:request("POST", "/sessions", { document = digest, days = days }, nil, timeout or UPLOAD_TIMEOUT)
 end
 
-function Api:pushHighlights(digest, highlights)
-    return self:request("POST", "/highlights", { document = digest, highlights = highlights }, nil, UPLOAD_TIMEOUT)
+function Api:pushHighlights(digest, highlights, timeout)
+    return self:request("POST", "/highlights", { document = digest, highlights = highlights }, nil, timeout or UPLOAD_TIMEOUT)
 end
 
 return Api
