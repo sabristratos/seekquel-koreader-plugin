@@ -21,11 +21,12 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.4.0"
+local VERSION = "1.4.1"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
 local PUSH_DEBOUNCE_SECONDS = 5
+local OPEN_DELAY_SECONDS = 3
 local METADATA_DELAY_SECONDS = 20
 local COVER_DELAY_SECONDS = 60
 local SYNC_BUDGET_SECONDS = 20
@@ -74,6 +75,7 @@ function Seekquel:init()
     self.push_scheduled = false
     self.pairing_active = false
     self.run_deadline = nil
+    self.scheduled = {}
 
     local interrupted = self.settings:takeInterruption()
 
@@ -97,14 +99,43 @@ function Seekquel:onReaderReady()
     end
 
     self:observeStatus(self.digest)
-
-    self:whenOnline(function()
-        self:beginRun()
-        self:reportDevice()
-        self:ensureDocument()
-    end)
-
+    self:scheduleOpeningSync(self.digest)
     self:scheduleFileDetails(self.digest)
+end
+
+function Seekquel:scheduleTask(seconds, task)
+    local wrapped
+
+    wrapped = function()
+        self.scheduled[wrapped] = nil
+        task()
+    end
+
+    self.scheduled[wrapped] = true
+    UIManager:scheduleIn(seconds, wrapped)
+end
+
+function Seekquel:cancelScheduled()
+    for task in pairs(self.scheduled) do
+        UIManager:unschedule(task)
+    end
+
+    self.scheduled = {}
+    self.push_scheduled = false
+end
+
+function Seekquel:scheduleOpeningSync(digest)
+    self:scheduleTask(OPEN_DELAY_SECONDS, function()
+        if self.digest ~= digest then
+            return
+        end
+
+        self:whenOnline(function()
+            self:beginRun()
+            self:reportDevice()
+            self:ensureDocument()
+        end)
+    end)
 end
 
 function Seekquel:reportDevice()
@@ -226,13 +257,13 @@ function Seekquel:scheduleFileDetails(digest)
         return
     end
 
-    UIManager:scheduleIn(METADATA_DELAY_SECONDS, function()
+    self:scheduleTask(METADATA_DELAY_SECONDS, function()
         self:whenIdle(digest, function()
             self:sendFileMetadata()
         end)
     end)
 
-    UIManager:scheduleIn(COVER_DELAY_SECONDS, function()
+    self:scheduleTask(COVER_DELAY_SECONDS, function()
         self:whenIdle(digest, function()
             self:sendFileCover()
         end)
@@ -314,11 +345,19 @@ function Seekquel:onCloseDocument()
 end
 
 function Seekquel:onSuspend()
-    self:pushNow()
+    self:cancelScheduled()
 end
 
 function Seekquel:onRequestSuspend()
-    self:pushNow()
+    self:cancelScheduled()
+end
+
+function Seekquel:onResume()
+    self:schedulePush()
+end
+
+function Seekquel:onRequestResume()
+    self:schedulePush()
 end
 
 function Seekquel:onEndOfBook()
@@ -363,7 +402,7 @@ function Seekquel:schedulePush()
 
     self.push_scheduled = true
 
-    UIManager:scheduleIn(PUSH_DEBOUNCE_SECONDS, function()
+    self:scheduleTask(PUSH_DEBOUNCE_SECONDS, function()
         self.push_scheduled = false
         self:pushNow()
     end)
@@ -539,6 +578,7 @@ function Seekquel:syncNow()
         return
     end
 
+    self.api:clearBackoff()
     self:pushNow(true)
     self:notify(_("Syncing in the background."))
 end
@@ -763,6 +803,8 @@ function Seekquel:installUpdate()
         local waiting = InfoMessage:new({ text = _("Downloading the update.") })
         UIManager:show(waiting)
         UIManager:forceRePaint()
+
+        self.api:clearBackoff()
 
         local manifest = self.api:pluginManifest()
         local ok, reason = false, "no_manifest"
@@ -1007,6 +1049,8 @@ end
 
 function Seekquel:beginPairing()
     NetworkMgr:runWhenOnline(function()
+        self.api:clearBackoff()
+
         local started = self.api:startPairing(self:deviceName(), Device.model)
 
         if started == nil or started.device_code == nil then
@@ -1064,6 +1108,8 @@ function Seekquel:pollPairing(device_code, dialog, deadline, interval)
         if not self.pairing_active then
             return
         end
+
+        self.api:clearBackoff()
 
         local collected = self.api:pollPairing(device_code)
 

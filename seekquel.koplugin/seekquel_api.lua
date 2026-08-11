@@ -5,9 +5,6 @@ local ltn12 = require("ltn12")
 local socketutil = require("socketutil")
 local url = require("socket.url")
 
-local Api = {}
-Api.__index = Api
-
 local BLOCK_TIMEOUT = 5
 local TOTAL_TIMEOUT = 12
 local UPLOAD_BLOCK_TIMEOUT = 10
@@ -15,8 +12,12 @@ local UPLOAD_TOTAL_TIMEOUT = 30
 local DOWNLOAD_BLOCK_TIMEOUT = 15
 local DOWNLOAD_TOTAL_TIMEOUT = 120
 local SLOW_CALL_SECONDS = 5
+local BACKOFF_SECONDS = 120
 
 local UPLOAD_TIMEOUT = { block = UPLOAD_BLOCK_TIMEOUT, total = UPLOAD_TOTAL_TIMEOUT }
+
+local Api = {}
+Api.__index = Api
 
 local function withoutNulls(value)
     if type(value) ~= "table" then
@@ -42,7 +43,17 @@ function Api:isConfigured()
     return self.settings:isConnected()
 end
 
+function Api:clearBackoff()
+    self.settings:clearUnreachable()
+end
+
 function Api:request(method, path, body, query, timeout)
+    if self.settings:isUnreachable() then
+        logger.warn("Seekquel: skipping", method, path, "until the server answers again")
+
+        return nil, nil
+    end
+
     local endpoint = self.settings:syncUrl() .. path
 
     if query then
@@ -107,9 +118,12 @@ function Api:request(method, path, body, query, timeout)
 
     if not ok or result == nil then
         logger.warn("Seekquel: could not reach", method, path, tostring(code))
+        self.settings:markUnreachable(BACKOFF_SECONDS)
 
         return nil, nil
     end
+
+    self.settings:clearUnreachable()
 
     local status = tonumber(code)
     local content = table.concat(sink)

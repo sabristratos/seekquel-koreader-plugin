@@ -70,6 +70,7 @@ function Settings:disconnect()
     self:set("timezone_offset", nil)
     self:set("latest_version", nil)
     self:set("pending_restart", nil)
+    self:set("unreachable_until", nil)
 
     for _index, key in ipairs(PER_BOOK_KEYS) do
         self:set(key, nil)
@@ -97,6 +98,24 @@ end
 
 function Settings:clearBusy()
     self:set("busy", nil)
+end
+
+function Settings:markUnreachable(seconds)
+    self:set("unreachable_until", os.time() + seconds)
+end
+
+function Settings:clearUnreachable()
+    if self:get("unreachable_until") == nil then
+        return
+    end
+
+    self:set("unreachable_until", nil)
+end
+
+function Settings:isUnreachable()
+    local deadline = tonumber(self:get("unreachable_until"))
+
+    return deadline ~= nil and os.time() < deadline
 end
 
 function Settings:takeInterruption()

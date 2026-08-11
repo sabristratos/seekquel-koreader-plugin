@@ -4,6 +4,26 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-08-11
+
+### Fixed
+
+- **Opening a book no longer freezes the reader.** The add-on used to tell Seekquel about
+  the device and look the file up before the page appeared, so a slow or unreachable
+  server held a blank screen for as long as it took to give up: twenty-one seconds on one
+  Boox. The book now opens straight away and the add-on catches up a few seconds later,
+  once you are reading.
+- **A server that cannot be reached is left alone for two minutes.** Every call used to
+  wait out its own timeout, so one unreachable server meant one long pause after another
+  through a single sync. The first failure now stands for the rest, and Sync now, pairing
+  and updating still try immediately whenever you ask them to.
+- **Going to sleep no longer syncs at all.** Sleeping, or switching away from KOReader on
+  a phone, used to start a full sync: up to six calls one after another while the system
+  was trying to put the app away. On a Samsung phone that ended with the app being killed
+  part way through sending a reading position. Sleeping now cancels whatever was queued
+  and sends nothing. Everything waiting goes out a few seconds after you come back, where
+  a pause costs you nothing and cannot get the app closed.
+
 ## [1.4.0] - 2026-08-11
 
 ### Added

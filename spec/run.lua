@@ -184,6 +184,9 @@ check("the key survives a restart", require("seekquel_settings"):new():isConnect
 
 step("4. Opening the book")
 plugin:onReaderReady()
+check("opening the book never waits on the network", plugin.document_state == nil,
+    "the server was called while the book was opening")
+drainScheduled()
 check("the file is identified by the checksum KOReader stores", plugin.digest == DIGEST,
     tostring(plugin.digest))
 check("the document is known to the server", plugin.document_state ~= nil)
@@ -236,14 +239,45 @@ plugin:pushNow()
 local document = asReader("GET", "/api/integrations/devices")
 check("the reader's devices list still answers", document.data ~= nil)
 
-step("9. Going to sleep syncs, whichever word the device uses for it")
-local pushes = 0
+step("9. Going to sleep stops, and waking picks it up again")
+local calls = 0
 local original_push = plugin.pushNow
-plugin.pushNow = function() pushes = pushes + 1 end
+local original_progress = plugin.api.pushProgress
+plugin.pushNow = function() calls = calls + 1 end
+plugin.api.pushProgress = function() calls = calls + 1 return {} end
+
+local function forget()
+    plugin.push_scheduled = false
+    plugin.scheduled = {}
+    recorder.scheduled = {}
+end
+
+plugin:schedulePush()
+check("a page turn queues a sync", plugin.push_scheduled == true, tostring(plugin.push_scheduled))
+
 plugin:onSuspend()
-check("a Kobo or Kindle sleeping syncs", pushes == 1, "pushes = " .. pushes)
+check("a Kobo or Kindle sleeping drops the queued sync",
+    plugin.push_scheduled == false and next(plugin.scheduled) == nil, "still queued")
+
+forget()
+plugin:schedulePush()
 plugin:onRequestSuspend()
-check("an Android reader sleeping syncs", pushes == 2, "pushes = " .. pushes)
+check("an Android reader sleeping drops it too", next(plugin.scheduled) == nil, "still queued")
+check("sleeping never touches the network", calls == 0, "calls = " .. calls)
+
+forget()
+plugin.api.pushProgress = original_progress
+
+plugin:onResume()
+check("waking queues the sync that sleeping dropped", plugin.push_scheduled == true,
+    tostring(plugin.push_scheduled))
+
+forget()
+plugin:onRequestResume()
+check("an Android reader waking queues it too", plugin.push_scheduled == true,
+    tostring(plugin.push_scheduled))
+
+forget()
 plugin.pushNow = original_push
 
 step("10. A status set in KOReader's own screens reaches the account")
