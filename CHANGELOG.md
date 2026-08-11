@@ -4,6 +4,36 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-11
+
+### Added
+
+- **Rate a book from the reader.** Under Seekquel, tap Rate this book. No rating removes
+  one you have already given.
+- **The status you set in KOReader travels.** Marking a book Finished or On hold from
+  KOReader's own status screen, or from the file browser, now reaches Seekquel as Read or
+  Did not finish, instead of leaving the book sitting as Reading forever. It only sends a
+  change you make on the device, so the status you set in the app is never overwritten.
+  There is a switch for it in Settings.
+- Syncing when Wi-Fi is about to go off, so the last few pages are not left behind on a
+  device that turns its radio off by itself.
+
+### Fixed
+
+- **Pointing a file at a different book sends that book everything.** Correcting a link
+  used to leave the new book without the reading history and highlights already sent to
+  the old one, because the add-on believed it had sent them. It now starts fresh.
+
+## [1.3.1] - 2026-08-11
+
+### Fixed
+
+- **Putting an Android reader to sleep now syncs.** On a Boox or any other Android
+  device, KOReader tells add-ons something different when the screen goes off than a Kobo
+  or a Kindle does, and the add-on was only listening for the Kobo and Kindle version. So
+  a passage you highlighted and then slept on stayed on the device until you closed the
+  book or tapped Sync now. Both are handled now, and sleeping syncs on every device.
+
 ## [1.3.0] - 2026-08-10
 
 ### Added
@@ -46,6 +76,10 @@ All notable changes to this project are recorded here. The format follows
 - Disconnecting a device forgets what it had already sent, so connecting to a different
   account sends that account the descriptions, covers and reading history it has not seen.
 - Searching with a letter or two typed says so instead of doing nothing.
+
+[1.4.0]: https://github.com/sabristratos/seekquel-koreader-plugin/releases/tag/v1.4.0
+
+[1.3.1]: https://github.com/sabristratos/seekquel-koreader-plugin/releases/tag/v1.3.1
 
 [1.3.0]: https://github.com/sabristratos/seekquel-koreader-plugin/releases/tag/v1.3.0
 

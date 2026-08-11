@@ -76,11 +76,23 @@ Until a file is linked, no reading time or highlights are sent for it. Minutes f
 against the wrong book are worse than minutes nobody recorded. Nothing is lost while it
 waits: your place is held, and everything catches up once you answer.
 
+Point a file at a different book later and that book gets everything: the reading history
+and the highlights are offered again from scratch, rather than being counted as already
+sent to the book you corrected away from.
+
+Once a file is linked you can set its status and rate it from **Tools > Seekquel**,
+without opening the app.
+
 ## Settings
 
 Everything is under **Tools > Seekquel > Settings**.
 
 - Send reading time, send highlights, and mark finished at the end are all on by default.
+- **Send status changes from this device** mirrors the status you set in KOReader's own
+  screens: Finished becomes Read, On hold becomes Did not finish. It only sends a change
+  you make on the device, so a status you set in the app is never overwritten. Setting it
+  from the file browser while the book is closed reaches Seekquel the next time you open
+  and sync that book.
 - **Sync while reading** off means it only syncs when you close a book.
 - **Send highlights automatically** off means your passages stay on the device until you
   tap **Sync now**. Your place in the book and your reading time keep syncing either way.

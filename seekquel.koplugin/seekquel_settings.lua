@@ -16,6 +16,7 @@ local PER_BOOK_KEYS = {
     "details_sent",
     "cover_sent",
     "highlights_sent",
+    "status_seen",
 }
 
 function Settings:new()
@@ -189,6 +190,29 @@ function Settings:markHistorySynced(digest)
     local synced = self:get("history_synced", {})
     synced[digest] = os.time()
     self:set("history_synced", synced)
+end
+
+function Settings:forgetBook(digest)
+    for _index, key in ipairs(PER_BOOK_KEYS) do
+        local stored = self:get(key, {})
+
+        if stored[digest] ~= nil then
+            stored[digest] = nil
+            self:set(key, stored)
+        end
+    end
+end
+
+function Settings:lastStatus(digest)
+    local seen = self:get("status_seen", {})
+
+    return seen[digest]
+end
+
+function Settings:markStatus(digest, status)
+    local seen = self:get("status_seen", {})
+    seen[digest] = status
+    self:set("status_seen", seen)
 end
 
 function Settings:sentHighlights(digest)

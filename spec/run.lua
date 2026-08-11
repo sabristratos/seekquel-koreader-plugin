@@ -95,12 +95,9 @@ local plugin = Seekquel:new({
             authors = "Steven Erikson",
         },
         doc_settings = {
-            readSetting = function(_, key)
-                if key == "partial_md5_checksum" then
-                    return DIGEST
-                end
-
-                return nil
+            data = { partial_md5_checksum = DIGEST },
+            readSetting = function(self, key)
+                return self.data[key]
             end,
         },
         rolling = {
@@ -239,13 +236,40 @@ plugin:pushNow()
 local document = asReader("GET", "/api/integrations/devices")
 check("the reader's devices list still answers", document.data ~= nil)
 
-step("9. Highlights are picked out of the annotations")
+step("9. Going to sleep syncs, whichever word the device uses for it")
+local pushes = 0
+local original_push = plugin.pushNow
+plugin.pushNow = function() pushes = pushes + 1 end
+plugin:onSuspend()
+check("a Kobo or Kindle sleeping syncs", pushes == 1, "pushes = " .. pushes)
+plugin:onRequestSuspend()
+check("an Android reader sleeping syncs", pushes == 2, "pushes = " .. pushes)
+plugin.pushNow = original_push
+
+step("10. A status set in KOReader's own screens reaches the account")
+check("opening the book remembers the status it had, so the app's is not overwritten",
+    plugin.settings:lastStatus(DIGEST) == "none", tostring(plugin.settings:lastStatus(DIGEST)))
+
+plugin.ui.doc_settings.data.summary = { status = "complete" }
+plugin:sendStatusChange(DIGEST)
+check("marking a book finished on the device sends it",
+    plugin.document_state and plugin.document_state.book and plugin.document_state.book.status == "read",
+    plugin.document_state and plugin.document_state.book and plugin.document_state.book.status)
+
+step("11. A star from the reader")
+plugin:setRating(4, "rated")
+drainScheduled()
+check("the rating reaches the book",
+    plugin.document_state and plugin.document_state.book and tonumber(plugin.document_state.book.rating) == 4,
+    plugin.document_state and plugin.document_state.book and tostring(plugin.document_state.book.rating))
+
+step("12. Highlights are picked out of the annotations")
 local highlights = plugin.annotations:collect(plugin.ui.annotation.annotations)
 check("only the highlight is sent, not the bookmark", #highlights == 1, "#highlights = " .. #highlights)
 check("the passage and the note both travel",
     highlights[1] and highlights[1].text == "Children are dying." and highlights[1].note == "the refrain")
 
-step("10. Reaching the end finishes the book")
+step("13. Reaching the end finishes the book")
 plugin:onEndOfBook()
 check("the book reads as finished",
     plugin.document_state and plugin.document_state.book and plugin.document_state.book.status == "read",

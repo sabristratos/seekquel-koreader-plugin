@@ -250,6 +250,12 @@ function Api:setStatus(digest, status)
     return body and body.data or nil
 end
 
+function Api:setRating(digest, rating)
+    local body = self:request("PUT", "/documents/" .. digest .. "/rating", { rating = rating })
+
+    return body and body.data or nil
+end
+
 function Api:searchBooks(query)
     local body = self:request("GET", "/books/search", nil, { q = query })
 

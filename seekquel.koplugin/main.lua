@@ -21,7 +21,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.3.0"
+local VERSION = "1.4.0"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -40,9 +40,20 @@ local STATUSES = {
     { key = "did_not_finish", label = _("Did not finish") },
 }
 
+local KOREADER_STATUSES = {
+    complete = "read",
+    abandoned = "did_not_finish",
+    reading = "reading",
+}
+
+local NO_STATUS = "none"
+
+local RATINGS = { 1, 2, 3, 4, 5 }
+
 local SWITCHES = {
     { key = "send_reading_time", default = true, label = _("Send reading time") },
     { key = "send_highlights", default = true, label = _("Send highlights and notes") },
+    { key = "send_status", default = true, label = _("Send status changes from this device") },
     { key = "finish_at_end", default = true, label = _("Mark finished at the end of a book") },
     { key = "auto_sync", default = true, label = _("Sync while reading") },
     { key = "auto_sync_highlights", default = true, label = _("Send highlights automatically") },
@@ -84,6 +95,8 @@ function Seekquel:onReaderReady()
     if self.digest == nil then
         return
     end
+
+    self:observeStatus(self.digest)
 
     self:whenOnline(function()
         self:beginRun()
@@ -304,6 +317,10 @@ function Seekquel:onSuspend()
     self:pushNow()
 end
 
+function Seekquel:onRequestSuspend()
+    self:pushNow()
+end
+
 function Seekquel:onEndOfBook()
     if not self.settings:isEnabled("finish_at_end", true) then
         return
@@ -317,6 +334,10 @@ function Seekquel:onEndOfBook()
 end
 
 function Seekquel:onNetworkConnected()
+    self:pushNow()
+end
+
+function Seekquel:onNetworkDisconnecting()
     self:pushNow()
 end
 
@@ -397,12 +418,69 @@ function Seekquel:pushNow(asked_for)
             end
         end
 
+        self:sendStatusChange(digest)
+
         if self:hasBudget() then
             self:sendFileMetadata()
         end
 
         self.settings:recordSync(sent)
     end)
+end
+
+function Seekquel:documentStatus()
+    if self.ui.doc_settings == nil then
+        return nil
+    end
+
+    local ok, summary = pcall(function()
+        return self.ui.doc_settings:readSetting("summary")
+    end)
+
+    if not ok or type(summary) ~= "table" then
+        return nil
+    end
+
+    return KOREADER_STATUSES[summary.status]
+end
+
+function Seekquel:observeStatus(digest)
+    if self.settings:lastStatus(digest) ~= nil then
+        return
+    end
+
+    self.settings:markStatus(digest, self:documentStatus() or NO_STATUS)
+end
+
+function Seekquel:sendStatusChange(digest)
+    if not self.settings:isEnabled("send_status", true) or not self:hasBudget() then
+        return
+    end
+
+    local status = self:documentStatus()
+
+    if status == nil then
+        return
+    end
+
+    local seen = self.settings:lastStatus(digest)
+
+    if seen == status then
+        return
+    end
+
+    if seen == nil then
+        self.settings:markStatus(digest, status)
+
+        return
+    end
+
+    local state = self.api:setStatus(digest, status)
+
+    if state ~= nil then
+        self.document_state = state
+        self.settings:markStatus(digest, status)
+    end
 end
 
 function Seekquel:allHighlights()
@@ -634,6 +712,11 @@ function Seekquel:menuItems()
             sub_item_table = self:statusItems(),
         },
         {
+            text = _("Rate this book"),
+            enabled = self:isLinked(),
+            sub_item_table = self:ratingItems(),
+        },
+        {
             text = _("Sync now"),
             enabled = self:isReady(),
             keep_menu_open = false,
@@ -836,6 +919,51 @@ function Seekquel:statusItems()
     end
 
     return items
+end
+
+function Seekquel:ratingItems()
+    local items = {}
+
+    for _index, stars in ipairs(RATINGS) do
+        table.insert(items, {
+            text = T(_("%1 stars"), tostring(stars)),
+            keep_menu_open = false,
+            callback = function()
+                self:setRating(stars, T(_("Rated %1 stars."), tostring(stars)))
+            end,
+        })
+    end
+
+    table.insert(items, {
+        text = _("No rating"),
+        keep_menu_open = false,
+        callback = function()
+            self:setRating(nil, _("Rating removed."))
+        end,
+    })
+
+    return items
+end
+
+function Seekquel:setRating(rating, confirmation)
+    local digest = self.digest
+
+    if digest == nil then
+        return
+    end
+
+    self:whenOnline(function()
+        local state = self.api:setRating(digest, rating)
+
+        if state == nil then
+            self:notify(_("Could not save that. Try again when you have a connection."))
+
+            return
+        end
+
+        self.document_state = state
+        self:notify(confirmation)
+    end)
 end
 
 function Seekquel:settingsItems()
@@ -1098,6 +1226,8 @@ function Seekquel:link(work_id, confirmation)
         end
 
         self.document_state = state
+        self.settings:forgetBook(digest)
+        self:observeStatus(digest)
         self:notify(confirmation)
         self:pushNow()
     end)
