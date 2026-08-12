@@ -4,6 +4,44 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-08-12
+
+### Added
+
+- **Syncing now also happens on a timer, every fifteen minutes by default.** Until now the
+  only thing that brought a sitting across while you were still in the book was turning
+  twenty pages, so reading slowly, or reading a few pages and putting the book down
+  without closing it, left everything waiting. Set it to five, thirty or sixty minutes, or
+  off, under **Settings > Sync on a timer**, or from Seekquel under Settings, Integrations,
+  KOReader, like the other switches. A tick with nothing new to send does nothing, so it
+  costs you no pauses, and it follows **Sync while reading** like the page count does.
+
+### Fixed
+
+- **A highlight made and then left behind now catches up.** Two things were against it.
+  Switching away from KOReader allows five seconds for the whole send and each request
+  can take two, so with your place and your reading time ahead of it in the queue, a
+  passage was routinely the one that ran out of time. And reopening the book sent only
+  your place, so nothing tried again until twenty pages had turned, you closed the book,
+  or you tapped Sync now. Passages now go ahead of reading time on the way out, since
+  reading time is a daily total that is complete whenever it arrives, and reopening a
+  book sends anything still waiting.
+- **Sleeping the device and picking it back up now syncs.** A message that fails leaves
+  the server alone for two minutes so one unreachable server cannot cost one wait after
+  another. Sleeping a reader turns its Wi-Fi off, so the send on the way out usually
+  failed, and that failure then swallowed the catch-up send when you came back: you slept
+  the reader, woke it, and nothing had moved. Waking up and finding a network both end
+  that wait now, because both are reasons to think the answer has changed.
+- **Update status and Rate this book show which one the book is on.** Both were lists of
+  every option with no mark on the current one, so all four statuses looked equally wrong.
+- **Send status changes from this device can be set from the app.** It has been on the
+  reader since 1.4.0 and the server did not recognise it, so it was the one switch you had
+  to go and find the e-reader to change.
+- **The slowest call the add-on reports is the slowest since it last reported.** It used to
+  be the slowest ever, kept for the life of the install, so one bad afternoon was re-sent
+  unchanged on every version after it and a reader whose problem was fixed still looked
+  slow.
+
 ## [1.4.5] - 2026-08-11
 
 ### Fixed

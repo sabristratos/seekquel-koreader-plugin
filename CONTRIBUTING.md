@@ -45,7 +45,19 @@ Run `luacheck .` before opening a pull request. CI runs it too.
 
 ## Testing
 
-Two harnesses, and they prove different things.
+Three harnesses, and they prove different things.
+
+### The settings spec
+
+```bash
+spec/settings.sh
+```
+
+The one you can run while editing: no server, no token, nobody approving a pairing code.
+It covers the settings store's own logic, which is where the rules that are easy to get
+subtly wrong live: a high-water mark that must not move backwards, and a diagnostic that
+has to survive being reported without being re-reported forever. Run it before the two
+below; it takes a second and it has already caught a bug the reasoning missed.
 
 ### The Lua harness
 

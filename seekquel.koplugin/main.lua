@@ -21,7 +21,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.4.5"
+local VERSION = "1.5.0"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -32,7 +32,10 @@ local SYNC_BUDGET_SECONDS = 20
 local LEAVING_BUDGET_SECONDS = 5
 local HISTORY_OVERLAP_DAYS = 2
 local SECONDS_PER_DAY = 86400
+local SECONDS_PER_MINUTE = 60
 local SEARCH_MIN_LENGTH = 2
+
+local SYNC_INTERVALS = { 0, 5, 15, 30, 60 }
 
 local STATUSES = {
     { key = "want_to_read", label = _("Want to read") },
@@ -77,6 +80,7 @@ function Seekquel:init()
     self.pairing_active = false
     self.run_deadline = nil
     self.scheduled = {}
+    self.interval_task = nil
 
     local interrupted = self.settings:takeInterruption()
 
@@ -103,6 +107,7 @@ function Seekquel:onReaderReady()
     self:observeStatus(self.digest)
     self:scheduleOpeningSync(self.digest)
     self:scheduleFileDetails(self.digest)
+    self:scheduleIntervalSync()
 end
 
 function Seekquel:scheduleTask(seconds, task)
@@ -115,6 +120,17 @@ function Seekquel:scheduleTask(seconds, task)
 
     self.scheduled[wrapped] = true
     UIManager:scheduleIn(seconds, wrapped)
+
+    return wrapped
+end
+
+function Seekquel:cancelTask(handle)
+    if handle == nil then
+        return
+    end
+
+    UIManager:unschedule(handle)
+    self.scheduled[handle] = nil
 end
 
 function Seekquel:cancelScheduled()
@@ -124,6 +140,47 @@ function Seekquel:cancelScheduled()
 
     self.scheduled = {}
     self.push_scheduled = false
+    self.interval_task = nil
+end
+
+function Seekquel:scheduleIntervalSync()
+    self:cancelTask(self.interval_task)
+    self.interval_task = nil
+
+    local minutes = self.settings:syncIntervalMinutes()
+
+    if minutes <= 0 then
+        return
+    end
+
+    self.interval_task = self:scheduleTask(minutes * SECONDS_PER_MINUTE, function()
+        self.interval_task = nil
+        self:runIntervalSync()
+    end)
+end
+
+function Seekquel:runIntervalSync()
+    if not self:isReady() or self.digest == nil then
+        return
+    end
+
+    if self.settings:isEnabled("auto_sync", true) and self:hasUnsyncedWork() then
+        self:pushNow()
+    end
+
+    self:scheduleIntervalSync()
+end
+
+function Seekquel:hasUnsyncedWork()
+    local progress = self:currentPosition()
+
+    if progress ~= nil and progress ~= self.pushed_progress then
+        return true
+    end
+
+    local pending = self:unsentHighlights(self.digest, self:collectHighlights())
+
+    return #pending > 0
 end
 
 function Seekquel:scheduleOpeningSync(digest)
@@ -136,29 +193,35 @@ function Seekquel:scheduleOpeningSync(digest)
             self:beginRun()
             self:reportDevice()
             self:ensureDocument()
+
+            if self:hasUnsyncedWork() then
+                self:pushNow(false, false, true)
+            end
         end)
     end)
 end
 
 function Seekquel:reportDevice()
+    local slowest = self.settings:slowestCall()
+
     local answer = self.api:reportDevice({
         device_name = self:deviceName(),
         platform = Device.model,
         app_version = VERSION,
         settings = self:currentSettings(),
-        diagnostics = self:diagnostics(),
+        diagnostics = self:diagnostics(slowest),
     })
 
     self:applyServerAnswer(answer)
 
     if answer ~= nil then
         self.settings:clearInterruption()
+        self.settings:clearTiming(slowest)
     end
 end
 
-function Seekquel:diagnostics()
+function Seekquel:diagnostics(slowest)
     local interruption = self.settings:lastInterruption()
-    local slowest = self.settings:slowestCall()
     local synced_at, synced_ok = self.settings:lastSync()
 
     return {
@@ -177,6 +240,8 @@ function Seekquel:currentSettings()
     for _index, switch in ipairs(SWITCHES) do
         settings[switch.key] = self.settings:isEnabled(switch.key, switch.default)
     end
+
+    settings.sync_interval_minutes = self.settings:syncIntervalMinutes()
 
     return settings
 end
@@ -244,7 +309,25 @@ function Seekquel:applyRequestedSettings(answer)
         end
     end
 
+    self:applyRequestedInterval(answer.apply.sync_interval_minutes)
     self.settings:markSettingsApplied(revision)
+end
+
+function Seekquel:applyRequestedInterval(wanted)
+    local minutes = tonumber(wanted)
+
+    if minutes == nil or minutes == self.settings:syncIntervalMinutes() then
+        return
+    end
+
+    for _index, choice in ipairs(SYNC_INTERVALS) do
+        if choice == minutes then
+            self.settings:setSyncIntervalMinutes(minutes)
+            self:scheduleIntervalSync()
+
+            return
+        end
+    end
 end
 
 function Seekquel:ensureDocument()
@@ -305,6 +388,10 @@ function Seekquel:sendProgress(timeout)
         return true
     end
 
+    if progress == self.pushed_progress then
+        return true
+    end
+
     local sent = self.api:pushProgress(
         self.digest,
         progress,
@@ -347,11 +434,17 @@ function Seekquel:leaveQuietly()
 end
 
 function Seekquel:onResume()
-    self:schedulePush()
+    self:resumeSyncing()
 end
 
 function Seekquel:onRequestResume()
+    self:resumeSyncing()
+end
+
+function Seekquel:resumeSyncing()
+    self.api:clearBackoff()
     self:schedulePush()
+    self:scheduleIntervalSync()
 end
 
 function Seekquel:onEndOfBook()
@@ -367,6 +460,7 @@ function Seekquel:onEndOfBook()
 end
 
 function Seekquel:onNetworkConnected()
+    self.api:clearBackoff()
     self:pushNow()
 end
 
@@ -410,7 +504,7 @@ function Seekquel:hasBudget()
     return self.run_deadline == nil or os.time() < self.run_deadline
 end
 
-function Seekquel:pushNow(asked_for, leaving)
+function Seekquel:pushNow(asked_for, leaving, continuing)
     if not self:isReady() or self.digest == nil then
         return
     end
@@ -422,7 +516,9 @@ function Seekquel:pushNow(asked_for, leaving)
     local timeout = leaving and Api.LEAVING_TIMEOUT or nil
 
     local run = function()
-        self:beginRun(leaving and LEAVING_BUDGET_SECONDS or nil)
+        if not continuing then
+            self:beginRun(leaving and LEAVING_BUDGET_SECONDS or nil)
+        end
 
         local sent = self:sendProgress(timeout)
 
@@ -432,21 +528,21 @@ function Seekquel:pushNow(asked_for, leaving)
             return
         end
 
-        if #days > 0 then
-            if not self:hasBudget() then
-                sent = false
-            elseif type(self.api:pushSessions(digest, days, timeout)) == "table" then
-                self.settings:markHistorySynced(digest)
-            else
-                sent = false
-            end
-        end
-
         if #pending > 0 then
             if not self:hasBudget() then
                 sent = false
             elseif self.api:pushHighlights(digest, pending, timeout) ~= nil then
                 self.settings:markHighlightsSent(digest, fingerprints)
+            else
+                sent = false
+            end
+        end
+
+        if #days > 0 then
+            if not self:hasBudget() then
+                sent = false
+            elseif type(self.api:pushSessions(digest, days, timeout)) == "table" then
+                self.settings:markHistorySynced(digest)
             else
                 sent = false
             end
@@ -961,6 +1057,9 @@ function Seekquel:statusItems()
         table.insert(items, {
             text = status.label,
             keep_menu_open = false,
+            checked_func = function()
+                return self:currentStatus() == status.key
+            end,
             callback = function()
                 self:setStatus(status.key, status.label)
             end,
@@ -970,6 +1069,18 @@ function Seekquel:statusItems()
     return items
 end
 
+function Seekquel:currentStatus()
+    local book = self:book()
+
+    return book and book.status or nil
+end
+
+function Seekquel:currentRating()
+    local book = self:book()
+
+    return book and tonumber(book.rating) or nil
+end
+
 function Seekquel:ratingItems()
     local items = {}
 
@@ -977,6 +1088,9 @@ function Seekquel:ratingItems()
         table.insert(items, {
             text = T(_("%1 stars"), tostring(stars)),
             keep_menu_open = false,
+            checked_func = function()
+                return self:currentRating() == stars
+            end,
             callback = function()
                 self:setRating(stars, T(_("Rated %1 stars."), tostring(stars)))
             end,
@@ -986,6 +1100,9 @@ function Seekquel:ratingItems()
     table.insert(items, {
         text = _("No rating"),
         keep_menu_open = false,
+        checked_func = function()
+            return self:isLinked() and self:currentRating() == nil
+        end,
         callback = function()
             self:setRating(nil, _("Rating removed."))
         end,
@@ -1030,6 +1147,10 @@ function Seekquel:settingsItems()
         })
     end
 
+    table.insert(items, {
+        text = _("Sync on a timer"),
+        sub_item_table = self:syncIntervalItems(),
+    })
     table.insert(items, self:serverItem())
     table.insert(items, {
         text = _("Disconnect this device"),
@@ -1040,6 +1161,25 @@ function Seekquel:settingsItems()
             self:notify(_("Disconnected. Your reading stays in Seekquel."))
         end,
     })
+
+    return items
+end
+
+function Seekquel:syncIntervalItems()
+    local items = {}
+
+    for _index, minutes in ipairs(SYNC_INTERVALS) do
+        table.insert(items, {
+            text = minutes == 0 and _("Off") or T(_("Every %1 minutes"), tostring(minutes)),
+            checked_func = function()
+                return self.settings:syncIntervalMinutes() == minutes
+            end,
+            callback = function()
+                self.settings:setSyncIntervalMinutes(minutes)
+                self:scheduleIntervalSync()
+            end,
+        })
+    end
 
     return items
 end
@@ -1280,6 +1420,7 @@ function Seekquel:link(work_id, confirmation)
 
         self.document_state = state
         self.settings:forgetBook(digest)
+        self.pushed_progress = nil
         self:observeStatus(digest)
         self:notify(confirmation)
         self:pushNow()

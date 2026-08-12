@@ -128,6 +128,8 @@ local plugin = Seekquel:new({
 
 plugin.settings:setSyncUrl(BASE)
 
+plugin.settings:setSyncIntervalMinutes(0)
+
 step("1. The plugin starts a pairing and shows a code")
 
 local started_device_code = nil
@@ -268,15 +270,27 @@ check("the leaving budget is far shorter than a normal sync",
     require("seekquel_api").LEAVING_TIMEOUT.total <= 3,
     tostring(require("seekquel_api").LEAVING_TIMEOUT.total))
 
+plugin.settings:markUnreachable(120)
 plugin:onResume()
 check("waking still catches up on whatever did not fit", plugin.push_scheduled == true,
     tostring(plugin.push_scheduled))
+check("waking stops the server being written off",
+    plugin.settings:isUnreachable() == false, "still backing off")
 
 forget()
+plugin.settings:markUnreachable(120)
 plugin:onRequestResume()
 check("an Android reader waking catches up too", plugin.push_scheduled == true,
     tostring(plugin.push_scheduled))
+check("and stops backing off too", plugin.settings:isUnreachable() == false, "still backing off")
 
+forget()
+plugin.settings:markUnreachable(120)
+plugin:onNetworkConnected()
+check("finding a network stops backing off as well",
+    plugin.settings:isUnreachable() == false, "still backing off")
+
+plugin.settings:clearUnreachable()
 forget()
 
 step("10. A status set in KOReader's own screens reaches the account")
@@ -307,6 +321,66 @@ plugin:onEndOfBook()
 check("the book reads as finished",
     plugin.document_state and plugin.document_state.book and plugin.document_state.book.status == "read",
     plugin.document_state and plugin.document_state.book and plugin.document_state.book.status)
+
+step("14. Syncing on a timer")
+
+local ticks = {}
+local original_interval_push = plugin.pushNow
+plugin.pushNow = function() table.insert(ticks, true) end
+
+local function armed()
+    local count = 0
+
+    for _ in pairs(plugin.scheduled) do
+        count = count + 1
+    end
+
+    return count
+end
+
+forget()
+plugin.settings:setSyncIntervalMinutes(15)
+plugin:scheduleIntervalSync()
+check("asking for a timer arms one", armed() == 1, tostring(armed()))
+
+plugin:scheduleIntervalSync()
+check("arming it again replaces the pending run rather than adding a second",
+    armed() == 1, tostring(armed()))
+
+forget()
+plugin.settings:setSyncIntervalMinutes(0)
+plugin:scheduleIntervalSync()
+check("off means no timer at all", armed() == 0, tostring(armed()))
+
+forget()
+plugin.settings:setSyncIntervalMinutes(15)
+plugin.pushed_progress = plugin:currentPosition()
+
+local _, fingerprints = plugin:unsentHighlights(DIGEST, plugin:collectHighlights(true))
+plugin.settings:markHighlightsSent(DIGEST, fingerprints)
+ticks = {}
+plugin:runIntervalSync()
+check("a tick with nothing new sends nothing", #ticks == 0, tostring(#ticks))
+check("and still arms the next one", armed() == 1, tostring(armed()))
+
+forget()
+plugin.pushed_progress = nil
+ticks = {}
+plugin:runIntervalSync()
+check("a tick with the position behind syncs", #ticks == 1, tostring(#ticks))
+
+forget()
+plugin.settings:set("auto_sync", false)
+plugin.pushed_progress = nil
+ticks = {}
+plugin:runIntervalSync()
+check("turning off syncing while reading stops the timer syncing too",
+    #ticks == 0, tostring(#ticks))
+plugin.settings:set("auto_sync", true)
+
+plugin.pushNow = original_interval_push
+plugin.settings:setSyncIntervalMinutes(0)
+forget()
 
 print(string.format("\n%d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)

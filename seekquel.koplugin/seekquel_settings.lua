@@ -8,6 +8,7 @@ local FILENAME = "seekquel.lua"
 
 local DEFAULT_SYNC_URL = "https://api.seekquel.app/koreader"
 local DEFAULT_PAGES_BEFORE_PUSH = 20
+local DEFAULT_SYNC_INTERVAL_MINUTES = 15
 local SECONDS_PER_DAY = 86400
 local LEGACY_HISTORY_DAYS = 7
 
@@ -70,6 +71,7 @@ function Settings:disconnect()
     self:set("latest_version", nil)
     self:set("pending_restart", nil)
     self:set("unreachable_until", nil)
+    self:set("slowest_call", nil)
 
     for _index, key in ipairs(PER_BOOK_KEYS) do
         self:set(key, nil)
@@ -89,6 +91,14 @@ end
 
 function Settings:pagesBeforePush()
     return self:get("pages_before_push", DEFAULT_PAGES_BEFORE_PUSH)
+end
+
+function Settings:syncIntervalMinutes()
+    return tonumber(self:get("sync_interval_minutes", DEFAULT_SYNC_INTERVAL_MINUTES)) or DEFAULT_SYNC_INTERVAL_MINUTES
+end
+
+function Settings:setSyncIntervalMinutes(minutes)
+    self:set("sync_interval_minutes", minutes)
 end
 
 function Settings:markBusy(label)
@@ -150,6 +160,24 @@ end
 
 function Settings:slowestCall()
     return self:get("slowest_call")
+end
+
+function Settings:clearTiming(reported)
+    if reported == nil then
+        return
+    end
+
+    local slowest = self:get("slowest_call")
+
+    if slowest == nil then
+        return
+    end
+
+    if slowest.at ~= reported.at or slowest.seconds ~= reported.seconds or slowest.label ~= reported.label then
+        return
+    end
+
+    self:set("slowest_call", nil)
 end
 
 function Settings:lastSync()

@@ -96,6 +96,12 @@ Everything is under **Tools > Seekquel > Settings**.
 - **Sync while reading** off means it only syncs when you close a book.
 - **Send highlights automatically** off means your passages stay on the device until you
   tap **Sync now**. Your place in the book and your reading time keep syncing either way.
+- **Sync on a timer** is every fifteen minutes by default, and can be set to five, thirty,
+  sixty, or off. It is the floor under the page count: read slowly, or read a few pages
+  and put the book down without closing it, and this is what brings the sitting across. A
+  tick with nothing new to send does nothing at all, so it costs you no pauses. It follows
+  **Sync while reading**, so turning that off stops the timer too. Like the switches, it
+  can be set from Seekquel instead of from here.
 - **Turn on Wi-Fi to sync** is off by default. With it off, syncing waits for a connection
   you made yourself, and your radio stays off.
 
@@ -109,7 +115,7 @@ the message is answered. If your reader dies in between, the note survives, and 
 time it connects it tells Seekquel what it stopped on. Nothing about what you highlighted
 is included, only the name of the step.
 
-You can set these switches here or in Seekquel, under Settings, Integrations, KOReader.
+You can set all of these here or in Seekquel, under Settings, Integrations, KOReader.
 The app records what you asked for and this device applies it the next time it connects,
 so a device that is off or out of range simply picks it up later. Changing a switch here
 always wins, because it takes effect immediately and works with no connection at all.
@@ -118,6 +124,13 @@ always wins, because it takes effect immediately and works with no connection at
 
 Some of this is worth knowing before you file a bug.
 
+**Time spent reading is KOReader's own count, and it does not run while you are away.**
+The add-on reads the numbers KOReader's statistics already keep, so it inherits their
+rules: a single page can never be worth more than **two minutes**, however long the book
+sits open on it, and time while the device is asleep is not counted at all. So falling
+asleep mid-page, or leaving the reader open on the sofa, costs you two minutes at most.
+That ceiling is yours to change, under KOReader's own **Settings > Statistics**.
+
 **A page turn is never waited on, but a sync is not free either.** Turning pages only ever
 schedules a sync, and never waits for one, so reading is unaffected. The sync itself does
 block: each message waits up to twelve seconds for an answer (thirty for a cover or a long
@@ -125,10 +138,16 @@ backlog), and a sync sends a few, so on a poor connection the screen can sit sti
 while once one starts. A sync that has already taken twenty seconds stops there and leaves
 the rest for the next one, so a bad connection costs you a delay rather than a longer wait.
 Describing a book to Seekquel is the slowest part and no longer happens as you open it: the
-description follows twenty seconds later and the cover a minute in, and only if Wi-Fi is
-already on. Syncs happen when you close a book, when the device sleeps, when it finds a
-network, and every sixty pages if **Sync while reading** is on. If yours freezes, **Sync
-status** will say what it stopped on, and that is reported so it can be fixed.
+description follows twenty seconds later, and only if Wi-Fi is already on. Syncs happen
+when you close a book, when the device sleeps, when you pick it back up, when it finds a
+network, every twenty pages if **Sync while reading** is on, and on the timer. If yours
+freezes, **Sync status** will say what it stopped on, and that is reported so it can be
+fixed.
+
+**A server that will not answer is left alone for two minutes**, so one unreachable server
+costs you one pause rather than one per message. Waking the device or finding a network
+ends that wait early, because both are reasons to think the answer has changed. **Sync
+now**, pairing and updating always try immediately.
 
 **Nothing is guessed at.** A file is linked to a catalogue book once, by you. Until then
 no reading time or highlights are sent for it, and the server refuses them anyway.
