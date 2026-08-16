@@ -223,11 +223,12 @@ function Api:reportDevice(payload)
     return self:request("PUT", "/device", payload)
 end
 
-function Api:pushProgress(digest, progress, percentage, device, metadata, timeout)
+function Api:pushProgress(digest, progress, percentage, covered, device, metadata, timeout)
     return self:request("PUT", "/syncs/progress", {
         document = digest,
         progress = tostring(progress),
         percentage = percentage,
+        covered = covered,
         device = device,
         device_id = self.settings:get("device_id"),
         metadata = metadata,

@@ -45,7 +45,19 @@ Run `luacheck .` before opening a pull request. CI runs it too.
 
 ## Testing
 
-Three harnesses, and they prove different things.
+Four harnesses, and they prove different things.
+
+### The position spec
+
+```bash
+spec/position.sh
+```
+
+The other one you can run while editing: no server, no token, nobody approving a pairing
+code. It covers telling where the reader *is* apart from where they are *looking*, which
+is decidable on the device alone and is the rule that is easiest to get subtly wrong.
+Consulting an index at the back of a book used to be reported as reading it, so a reader
+7% in was recorded at 94%.
 
 ### The settings spec
 
@@ -56,8 +68,9 @@ spec/settings.sh
 The one you can run while editing: no server, no token, nobody approving a pairing code.
 It covers the settings store's own logic, which is where the rules that are easy to get
 subtly wrong live: a high-water mark that must not move backwards, and a diagnostic that
-has to survive being reported without being re-reported forever. Run it before the two
-below; it takes a second and it has already caught a bug the reasoning missed.
+has to survive being reported without being re-reported forever. Run it and the position
+spec before the two below; they take a second between them, and each has already caught a
+bug the reasoning missed.
 
 ### The Lua harness
 

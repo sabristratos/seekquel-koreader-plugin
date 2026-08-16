@@ -4,22 +4,10 @@ package.path = "/plugin/seekquel.koplugin/?.lua;/plugin/spec/?.lua;" .. package.
 require("stubs")
 
 local Settings = require("seekquel_settings")
+local harness = require("harness")
 
-local passed, failed = 0, 0
-
-local function check(label, condition, detail)
-    if condition then
-        passed = passed + 1
-        print("  ok   " .. label)
-    else
-        failed = failed + 1
-        print("  FAIL " .. label .. (detail and ("  <- " .. tostring(detail)) or ""))
-    end
-end
-
-local function step(label)
-    print("\n" .. label)
-end
+local check = harness.check
+local step = harness.step
 
 local function fresh()
     local settings = Settings:new()
@@ -141,8 +129,4 @@ do
     check("waking or reconnecting opens it again", settings:isUnreachable() == false, "still backing off")
 end
 
-print(string.format("\n%d passed, %d failed", passed, failed))
-
-if failed > 0 then
-    os.exit(1)
-end
+harness.report()

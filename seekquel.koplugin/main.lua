@@ -12,6 +12,7 @@ local T = require("ffi/util").template
 local Annotations = require("seekquel_annotations")
 local Api = require("seekquel_api")
 local Metadata = require("seekquel_metadata")
+local Position = require("seekquel_position")
 local Settings = require("seekquel_settings")
 local Stats = require("seekquel_stats")
 local Updater = require("seekquel_updater")
@@ -21,7 +22,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.5.0"
+local VERSION = "1.5.1"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -70,6 +71,7 @@ function Seekquel:init()
     self.stats = Stats:new()
     self.annotations = Annotations:new()
     self.metadata_reader = Metadata:new()
+    self.position = Position:new()
     self.updater = Updater:new(self.api)
 
     self.digest = nil
@@ -99,6 +101,8 @@ function Seekquel:onReaderReady()
     self.digest = self:documentDigest()
     self.pages_turned = 0
     self.pushed_progress = nil
+
+    self.position:reset(self.metadata_reader:pageCount(self.ui))
 
     if self.digest == nil then
         return
@@ -172,7 +176,7 @@ function Seekquel:runIntervalSync()
 end
 
 function Seekquel:hasUnsyncedWork()
-    local progress = self:currentPosition()
+    local progress = self.position:reportable()
 
     if progress ~= nil and progress ~= self.pushed_progress then
         return true
@@ -188,6 +192,8 @@ function Seekquel:scheduleOpeningSync(digest)
         if self.digest ~= digest then
             return
         end
+
+        self.position:settle(self:currentPosition())
 
         self:whenOnline(function()
             self:beginRun()
@@ -382,7 +388,7 @@ function Seekquel:sendFileMetadata()
 end
 
 function Seekquel:sendProgress(timeout)
-    local progress, percentage = self:currentPosition()
+    local progress, percentage, covered = self.position:reportable()
 
     if progress == nil then
         return true
@@ -396,6 +402,7 @@ function Seekquel:sendProgress(timeout)
         self.digest,
         progress,
         percentage,
+        covered,
         self:deviceName(),
         self:metadata(),
         timeout
@@ -403,16 +410,26 @@ function Seekquel:sendProgress(timeout)
 
     if sent then
         self.pushed_progress = progress
+        self.position:commit()
     end
 
     return sent
 end
 
 function Seekquel:onPosUpdate()
-    self:countPage()
+    self:trackPosition()
 end
 
 function Seekquel:onPageUpdate()
+    self:trackPosition()
+end
+
+function Seekquel:trackPosition()
+    if not self:isReady() then
+        return
+    end
+
+    self.position:observe(self:currentPosition())
     self:countPage()
 end
 

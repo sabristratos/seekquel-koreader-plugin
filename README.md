@@ -131,6 +131,14 @@ sits open on it, and time while the device is asleep is not counted at all. So f
 asleep mid-page, or leaving the reader open on the sofa, costs you two minutes at most.
 That ceiling is yours to change, under KOReader's own **Settings > Statistics**.
 
+**Looking something up is not reading, and your place knows the difference.** Jumping to an
+index at the back, an endnote, a glossary, an appendix or a chapter in the contents moves
+where you are looking, not how far you have read, so none of it is sent. Your place only
+follows you once you have read a few pages from where you landed, which is what makes
+skipping ahead work and a look at the index cost nothing. The same count decides what a
+day is credited with: skip an introduction and your place moves without those pages being
+added to your reading.
+
 **A page turn is never waited on, but a sync is not free either.** Turning pages only ever
 schedules a sync, and never waits for one, so reading is unaffected. The sync itself does
 block: each message waits up to twelve seconds for an answer (thirty for a cover or a long

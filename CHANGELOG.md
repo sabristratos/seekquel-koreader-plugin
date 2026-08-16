@@ -4,6 +4,23 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-08-16
+
+### Fixed
+
+- **Looking something up at the back of a book is no longer recorded as reading it.** Jump
+  to an index, an endnote, a glossary or an appendix and your place went with you: one
+  reader 7% into a book was recorded at 94%, that leap was counted as pages read that
+  afternoon, and it was announced to their followers as three quarters of a book. Worse,
+  it stayed the furthest point of the read, so everything they genuinely read afterwards
+  counted for nothing. Your place now only moves once you have actually read from where
+  you landed, so a look at the index is never sent at all. Skipping ahead and reading on
+  still follows you there, after a few pages.
+- **A day is only credited with the pages you turned.** Skip an introduction and your place
+  moves without the skipped pages being added to your day. The add-on now reports how much
+  of the book you crossed a page at a time, and that is the most a sync can be credited
+  with, so nothing you did not read reaches your streak, your goals or your badges.
+
 ## [1.5.0] - 2026-08-12
 
 ### Added

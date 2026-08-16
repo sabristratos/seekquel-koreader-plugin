@@ -354,7 +354,7 @@ check("off means no timer at all", armed() == 0, tostring(armed()))
 
 forget()
 plugin.settings:setSyncIntervalMinutes(15)
-plugin.pushed_progress = plugin:currentPosition()
+plugin.pushed_progress = plugin.position:reportable()
 
 local _, fingerprints = plugin:unsentHighlights(DIGEST, plugin:collectHighlights(true))
 plugin.settings:markHighlightsSent(DIGEST, fingerprints)
