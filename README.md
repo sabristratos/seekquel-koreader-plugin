@@ -39,7 +39,7 @@ the add-on write to its own folder, it says so and you copy the files across as 
 
 | What | When |
 | --- | --- |
-| Where you are in a book | Every 60 pages and when you close it |
+| Where you are in a book | Every 20 pages, on a timer, and when you close it |
 | How long you read | Per day, from KOReader's own statistics |
 | Books you finish | When you reach the end, if you leave that switch on |
 | Highlights and notes | With the passage and your own comment kept apart |
@@ -47,9 +47,14 @@ the add-on write to its own folder, it says so and you copy the files across as 
 | The book's own details | Once per file, the first time you open it |
 
 That last row is everything the file itself carries: the description, the ISBN, the
-language, the publisher's subject tags, how long the book is, the table of contents, and
-the cover. A sideloaded book that Seekquel has never heard of arrives with its jacket and
-its chapters rather than as a bare title.
+language, the publisher's subject tags, how long the book is and the table of contents. A
+sideloaded book that Seekquel has never heard of arrives with its chapters rather than as
+a bare title.
+
+Covers are not among them and will not be again. Decoding one out of a book file killed
+KOReader outright on a tester's Samsung, twice on two different books, so 1.4.3 removed
+that path entirely. Covers only ever applied to your own private copy of a book that had
+none, and Seekquel finds those itself.
 
 Those details only ever fill in **your own copy of a book Seekquel does not have**. They
 never touch a book in the shared catalogue, and they never overwrite something you have
@@ -182,10 +187,6 @@ annotation list. Delete them in Seekquel if you want them gone.
 
 **Your comment on a passage is stored apart from the passage.** The book's words and your
 words are two different things.
-
-**The cover faces the same check as any other automatically found cover.** Plenty of EPUBs
-carry a thumbnail-sized jacket, and a mushy cover on a shelf is worse than none. If yours
-is refused, that is why.
 
 ## Status
 
