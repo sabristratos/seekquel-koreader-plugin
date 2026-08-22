@@ -38,6 +38,7 @@ end
 preload("ui/widget/infomessage", widget("InfoMessage"))
 preload("ui/widget/inputdialog", widget("InputDialog"))
 preload("ui/widget/buttondialog", widget("ButtonDialog"))
+preload("ui/widget/qrmessage", widget("QRMessage"))
 
 preload("ui/uimanager", {
     show = function(_, w) return w end,

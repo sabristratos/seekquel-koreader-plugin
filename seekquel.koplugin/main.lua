@@ -3,6 +3,7 @@ local Device = require("device")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local NetworkMgr = require("ui/network/manager")
+local QRMessage = require("ui/widget/qrmessage")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
@@ -22,7 +23,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.5.1"
+local VERSION = "1.5.2"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -35,8 +36,10 @@ local HISTORY_OVERLAP_DAYS = 2
 local SECONDS_PER_DAY = 86400
 local SECONDS_PER_MINUTE = 60
 local SEARCH_MIN_LENGTH = 2
+local APP_QR_SIZE = 400
 
 local SYNC_INTERVALS = { 0, 5, 15, 30, 60 }
+local APP_LINK_URL = "https://seekquel.app/links"
 
 local STATUSES = {
     { key = "want_to_read", label = _("Want to read") },
@@ -822,9 +825,28 @@ function Seekquel:addToMainMenu(menu_items)
     }
 end
 
+function Seekquel:showAppQr()
+    UIManager:show(QRMessage:new({
+        text = APP_LINK_URL,
+        width = APP_QR_SIZE,
+        height = APP_QR_SIZE,
+    }))
+end
+
+function Seekquel:appQrItem()
+    return {
+        text = _("Get the Seekquel app"),
+        keep_menu_open = true,
+        callback = function()
+            self:showAppQr()
+        end,
+    }
+end
+
 function Seekquel:menuItems()
     if not self.api:isConfigured() then
         return {
+            self:appQrItem(),
             {
                 text = _("Connect this device"),
                 keep_menu_open = false,
@@ -1169,6 +1191,7 @@ function Seekquel:settingsItems()
         sub_item_table = self:syncIntervalItems(),
     })
     table.insert(items, self:serverItem())
+    table.insert(items, self:appQrItem())
     table.insert(items, {
         text = _("Disconnect this device"),
         keep_menu_open = false,

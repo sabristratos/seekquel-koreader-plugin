@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-08-22
+
+### Added
+
+- **Get the Seekquel app from the device itself.** Under Seekquel, tap **Get the Seekquel
+  app** for a QR code that opens Seekquel's links page on your phone, where the right app
+  store is one tap away. It is offered before you connect a device, since you need the app
+  before you have anything to pair with, and again under Settings for a second phone or
+  tablet.
+
 ## [1.5.1] - 2026-08-16
 
 ### Fixed
