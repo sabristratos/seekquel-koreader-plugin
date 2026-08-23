@@ -4,6 +4,32 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.3] - 2026-08-23
+
+### Fixed
+
+- **A Kindle Paperwhite could not tell Seekquel what it was.** Every time the add-on
+  introduced itself, the server refused the whole message because the device's model name
+  was one character too long for the field holding it. Nothing looked wrong: your pages,
+  reading time and highlights all synced normally. But the reply to that message is what
+  carries your time zone, the settings you change from the app, and the news that a newer
+  add-on exists, so none of those reached the device, and the app showed it as a nameless
+  reader with no version and no settings. The fix is on the server, so an affected device
+  names itself the next time you open a book, with nothing to install.
+- **Sending your reading history no longer holds the screen for half a minute.** One device
+  reported a single send taking 25 seconds, and the screen is frozen for the whole of it.
+  Sends are now given fifteen seconds, and anything that does not fit goes with the next
+  sync instead of keeping you waiting.
+
+### Changed
+
+- **Reading time is only sent when it has changed.** The add-on rebuilt and re-sent the
+  same day totals on every sync whether or not you had turned a page, which on the way out
+  of a book could push your highlights out of the same trip. Nearly half of all reading
+  time sends were crediting nothing. It now compares what it is about to send against what
+  it last sent and skips the trip entirely when nothing has moved, which leaves room for
+  your highlights.
+
 ## [1.5.2] - 2026-08-22
 
 ### Added

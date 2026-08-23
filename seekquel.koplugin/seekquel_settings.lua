@@ -14,6 +14,7 @@ local LEGACY_HISTORY_DAYS = 7
 
 local PER_BOOK_KEYS = {
     "history_synced",
+    "history_fingerprint",
     "details_sent",
     "highlights_sent",
     "status_seen",
@@ -232,10 +233,22 @@ function Settings:historySyncedAt(digest)
     return tonumber(stamp)
 end
 
-function Settings:markHistorySynced(digest)
+function Settings:markHistorySynced(digest, fingerprint)
     local synced = self:get("history_synced", {})
     synced[digest] = os.time()
     self:set("history_synced", synced)
+
+    if fingerprint ~= nil then
+        local prints = self:get("history_fingerprint", {})
+        prints[digest] = fingerprint
+        self:set("history_fingerprint", prints)
+    end
+end
+
+function Settings:historyFingerprint(digest)
+    local prints = self:get("history_fingerprint", {})
+
+    return prints[digest]
 end
 
 function Settings:forgetBook(digest)

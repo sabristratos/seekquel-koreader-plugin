@@ -146,9 +146,9 @@ added to your reading.
 
 **A page turn is never waited on, but a sync is not free either.** Turning pages only ever
 schedules a sync, and never waits for one, so reading is unaffected. The sync itself does
-block: each message waits up to twelve seconds for an answer (thirty for a cover or a long
-backlog), and a sync sends a few, so on a poor connection the screen can sit still for a
-while once one starts. A sync that has already taken twenty seconds stops there and leaves
+block: each message waits up to twelve seconds for an answer (fifteen for a backlog of
+reading history or highlights), and a sync sends a few, so on a poor connection the screen
+can sit still for a while once one starts. A sync that has already taken twenty seconds stops there and leaves
 the rest for the next one, so a bad connection costs you a delay rather than a longer wait.
 Describing a book to Seekquel is the slowest part and no longer happens as you open it: the
 description follows twenty seconds later, and only if Wi-Fi is already on. Syncs happen

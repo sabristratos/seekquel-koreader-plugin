@@ -129,4 +129,35 @@ do
     check("waking or reconnecting opens it again", settings:isUnreachable() == false, "still backing off")
 end
 
+step("A day set that has not moved is not sent again")
+
+do
+    local settings = fresh()
+
+    check("a book nothing has been sent for has no print",
+        settings:historyFingerprint("digest") == nil, "already printed")
+
+    settings:markHistorySynced("digest", "2026-08-23:600:12")
+    check("the print is kept once a batch lands",
+        settings:historyFingerprint("digest") == "2026-08-23:600:12",
+        settings:historyFingerprint("digest"))
+
+    settings:markHistorySynced("digest")
+    check("a landing with no print given leaves the last one standing",
+        settings:historyFingerprint("digest") == "2026-08-23:600:12",
+        settings:historyFingerprint("digest"))
+
+    settings:markHistorySynced("other", "2026-08-23:60:2")
+    check("prints are per book",
+        settings:historyFingerprint("digest") == "2026-08-23:600:12",
+        settings:historyFingerprint("digest"))
+
+    settings:forgetBook("digest")
+    check("forgetting a book forgets what it last sent",
+        settings:historyFingerprint("digest") == nil, "still printed")
+    check("and leaves the other book alone",
+        settings:historyFingerprint("other") == "2026-08-23:60:2",
+        settings:historyFingerprint("other"))
+end
+
 harness.report()

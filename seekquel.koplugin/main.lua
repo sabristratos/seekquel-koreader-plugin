@@ -23,7 +23,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.5.2"
+local VERSION = "1.5.3"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -533,6 +533,12 @@ function Seekquel:pushNow(asked_for, leaving, continuing)
     local highlights = self:collectHighlights(asked_for)
     local pending, fingerprints = self:unsentHighlights(digest, highlights)
     local days = self.settings:isEnabled("send_reading_time", true) and self:readingDays(digest) or {}
+    local history = #days > 0 and self:historyFingerprint(days) or nil
+
+    if history ~= nil and history == self.settings:historyFingerprint(digest) then
+        days = {}
+    end
+
     local timeout = leaving and Api.LEAVING_TIMEOUT or nil
 
     local run = function()
@@ -562,7 +568,7 @@ function Seekquel:pushNow(asked_for, leaving, continuing)
             if not self:hasBudget() then
                 sent = false
             elseif type(self.api:pushSessions(digest, days, timeout)) == "table" then
-                self.settings:markHistorySynced(digest)
+                self.settings:markHistorySynced(digest, history)
             else
                 sent = false
             end
@@ -724,6 +730,16 @@ end
 
 function Seekquel:canReachNetwork()
     return NetworkMgr:isOnline() or self.settings:isEnabled("wifi_on_demand", false)
+end
+
+function Seekquel:historyFingerprint(days)
+    local parts = {}
+
+    for _index, day in ipairs(days) do
+        table.insert(parts, table.concat({ day.date, day.seconds, day.pages }, ":"))
+    end
+
+    return table.concat(parts, "|")
 end
 
 function Seekquel:readingDays(digest)
