@@ -160,4 +160,127 @@ do
         settings:historyFingerprint("other"))
 end
 
+step("What ran out of budget last time goes first next time")
+
+do
+    local settings = fresh()
+
+    check("a book whose runs have all fitted defers nothing",
+        settings:deferredUpload("digest") == nil, settings:deferredUpload("digest"))
+
+    settings:markUploadDeferred("digest", "reading_time")
+    check("an upload the budget cut off is remembered",
+        settings:deferredUpload("digest") == "reading_time", settings:deferredUpload("digest"))
+
+    settings:markUploadDeferred("digest", "highlights")
+    check("the last one cut off is the one promoted, so the two take turns and neither starves",
+        settings:deferredUpload("digest") == "highlights", settings:deferredUpload("digest"))
+
+    settings:markUploadDeferred("other", "reading_time")
+    check("the debt is per book, since the budget is spent per book",
+        settings:deferredUpload("digest") == "highlights", settings:deferredUpload("digest"))
+
+    settings:clearUploadDeferred("digest")
+    check("a run that sends everything clears it",
+        settings:deferredUpload("digest") == nil, settings:deferredUpload("digest"))
+    check("and leaves the other book owing what it owed",
+        settings:deferredUpload("other") == "reading_time", settings:deferredUpload("other"))
+
+    settings:forgetBook("other")
+    check("forgetting a book forgets what it owed",
+        settings:deferredUpload("other") == nil, settings:deferredUpload("other"))
+end
+
+step("The order a run sends in follows the debt")
+
+do
+    local settings = fresh()
+
+    check("with nothing owed, highlights keep their place at the front",
+        settings:readingTimeFirst("digest") == false, settings:readingTimeFirst("digest"))
+
+    settings:markUploadDeferred("digest", Settings.UPLOAD_READING_TIME)
+    check("reading time cut off last run is promoted for the next one",
+        settings:readingTimeFirst("digest") == true, settings:readingTimeFirst("digest"))
+
+    settings:markUploadDeferred("digest", Settings.UPLOAD_HIGHLIGHTS)
+    check("highlights cut off in their turn hand the front back, so neither starves",
+        settings:readingTimeFirst("digest") == false, settings:readingTimeFirst("digest"))
+
+    settings:markUploadDeferred("other", Settings.UPLOAD_READING_TIME)
+    check("promotion is per book",
+        settings:readingTimeFirst("digest") == false, settings:readingTimeFirst("digest"))
+    check("and the other book keeps its promotion",
+        settings:readingTimeFirst("other") == true, settings:readingTimeFirst("other"))
+end
+
+step("A batch the server has refused is not offered again unchanged")
+
+do
+    local settings = fresh()
+
+    check("a book nothing has been refused for has no refusal",
+        settings:refusedHistory("digest") == nil, settings:refusedHistory("digest"))
+
+    settings:markHistoryRefused("digest", "2026-08-29:600:12")
+    check("the refused set is remembered, so a timer tick cannot re-offer it forever",
+        settings:refusedHistory("digest") == "2026-08-29:600:12", settings:refusedHistory("digest"))
+
+    settings:markHistoryRefused("other", "2026-08-29:60:2")
+    check("refusals are per book",
+        settings:refusedHistory("digest") == "2026-08-29:600:12", settings:refusedHistory("digest"))
+
+    settings:markHistoryRefused("digest", "2026-08-30:900:20")
+    check("a day set that has moved on replaces it, so reading on is offered again",
+        settings:refusedHistory("digest") == "2026-08-30:900:20", settings:refusedHistory("digest"))
+
+    settings:forgetBook("digest")
+    check("relinking a file forgets the refusal",
+        settings:refusedHistory("digest") == nil, settings:refusedHistory("digest"))
+
+    settings:disconnect()
+    check("so does disconnecting",
+        settings:refusedHistory("other") == nil, settings:refusedHistory("other"))
+end
+
+step("Introducing the device is due on the hour, not on every wake")
+
+do
+    local settings = fresh()
+
+    check("a device nothing has heard from is due immediately",
+        settings:isDeviceReportDue() == true, settings:isDeviceReportDue())
+
+    settings:markDeviceReported()
+    check("one that has just reported is not due again",
+        settings:isDeviceReportDue() == false, settings:isDeviceReportDue())
+
+    settings.store.data.last_device_report_at = os.time() - 3599
+    check("and is still not due a second short of the hour",
+        settings:isDeviceReportDue() == false, settings:isDeviceReportDue())
+
+    settings.store.data.last_device_report_at = os.time() - 3600
+    check("the hour makes it due again",
+        settings:isDeviceReportDue() == true, settings:isDeviceReportDue())
+end
+
+step("A device that has never introduced itself says so")
+do
+    local settings = fresh()
+
+    check("a fresh device has never reported",
+        settings:lastDeviceReport() == nil, settings:lastDeviceReport())
+
+    settings:markDeviceReported()
+    check("reporting records when",
+        type(settings:lastDeviceReport()) == "number", settings:lastDeviceReport())
+
+    check("and the recorded moment is now, not the epoch",
+        math.abs(settings:lastDeviceReport() - os.time()) <= 1, settings:lastDeviceReport())
+
+    settings:disconnect()
+    check("disconnecting forgets it, so a re-paired device introduces itself immediately",
+        settings:lastDeviceReport() == nil, settings:lastDeviceReport())
+end
+
 harness.report()

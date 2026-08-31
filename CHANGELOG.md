@@ -4,6 +4,49 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.5] - 2026-08-31
+
+### Fixed
+
+- **Your reader now tells Seekquel what it is, whichever order you do things in.** The
+  add-on introduced itself only in the few seconds after you opened a book, and on an
+  e-reader with its wifi off that moment passes before there is any connection, so for
+  anyone who switches wifi on afterwards it never happened at all. Everything else synced
+  normally, which is why nothing looked wrong: your place, your reading time, your
+  highlights and your finished books all arrived. What did not was the one message whose
+  reply carries your time zone, the settings you change in the app, and the news that a
+  newer add-on exists. So those readers had their reading filed by the reader's own clock
+  rather than their own day, never received a setting they changed on their phone, and
+  could never update. The add-on now introduces itself when you connect to wifi and when
+  you wake the device as well, at most once an hour.
+- **Waking your reader no longer waits on the network.** Introducing the device is a
+  message like any other, and sending it the instant you pick the reader up meant the
+  screen could sit still for up to twelve seconds waiting on a connection that is not
+  there yet. It now goes a few seconds later, once there is one, and is dropped rather
+  than waited on when there is not.
+- **Sync status says when reading time is waiting.** It listed your highlights and
+  nothing else, so reading time still sitting on the device was invisible on the one
+  screen that exists to tell you what has not been sent.
+- **Reading time the server will not accept is no longer offered again unchanged.** If a
+  batch of days is refused, sending the same batch again cannot succeed, so the add-on
+  waits until you have read more instead of retrying it on every sync.
+
+## [1.5.4] - 2026-08-31
+
+### Fixed
+
+- **Reading time no longer goes missing on a slow connection.** A sync stops once it has
+  taken twenty seconds and leaves the rest for the next one, but reading time was always
+  last in the queue, so on a device whose first few messages are slow it was the one thing
+  that never went. One reader was ninety pages into a book with three pages and one minute
+  recorded against it, while their place and their highlights kept arriving normally.
+  Whatever a sync cuts off is now sent first on the next one, so reading time and
+  highlights take turns instead of the same one being dropped every time. Nothing was lost
+  on the device, and the days that never made it go with the next sync.
+- **A sync now runs when reading time alone is waiting.** The timer checked whether you had
+  turned a page or highlighted something and skipped the sync if you had not, so reading
+  time left behind by an earlier sync sat there until something else needed sending.
+
 ## [1.5.3] - 2026-08-23
 
 ### Fixed

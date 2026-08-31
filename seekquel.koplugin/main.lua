@@ -23,7 +23,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.5.3"
+local VERSION = "1.5.5"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -37,6 +37,8 @@ local SECONDS_PER_DAY = 86400
 local SECONDS_PER_MINUTE = 60
 local SEARCH_MIN_LENGTH = 2
 local APP_QR_SIZE = 400
+local CLIENT_ERROR_FLOOR = 400
+local SERVER_ERROR_FLOOR = 500
 
 local SYNC_INTERVALS = { 0, 5, 15, 30, 60 }
 local APP_LINK_URL = "https://seekquel.app/links"
@@ -171,23 +173,34 @@ function Seekquel:runIntervalSync()
         return
     end
 
-    if self.settings:isEnabled("auto_sync", true) and self:hasUnsyncedWork() then
-        self:pushNow()
+    if self.settings:isEnabled("auto_sync", true) then
+        local batch = self:unsyncedBatch()
+
+        if batch ~= nil then
+            self:pushNow(false, false, false, batch)
+        end
     end
 
     self:scheduleIntervalSync()
 end
 
-function Seekquel:hasUnsyncedWork()
-    local progress = self.position:reportable()
+function Seekquel:unsyncedBatch()
+    local digest = self.digest
+    local pending, fingerprints = self:unsentHighlights(digest, self:collectHighlights())
+    local days, history = {}, nil
 
-    if progress ~= nil and progress ~= self.pushed_progress then
-        return true
+    if self:isLinked() then
+        days, history = self:unsentReadingDays(digest)
     end
 
-    local pending = self:unsentHighlights(self.digest, self:collectHighlights())
+    local progress = self.position:reportable()
+    local moved = progress ~= nil and progress ~= self.pushed_progress
 
-    return #pending > 0
+    if not moved and #pending == 0 and #days == 0 then
+        return nil
+    end
+
+    return { pending = pending, fingerprints = fingerprints, days = days, history = history }
 end
 
 function Seekquel:scheduleOpeningSync(digest)
@@ -199,13 +212,30 @@ function Seekquel:scheduleOpeningSync(digest)
         self.position:settle(self:currentPosition())
 
         self:whenOnline(function()
-            self:beginRun()
-            self:reportDevice()
+            self:reportDeviceIfDue()
             self:ensureDocument()
 
-            if self:hasUnsyncedWork() then
-                self:pushNow(false, false, true)
+            local batch = self:unsyncedBatch()
+
+            if batch ~= nil then
+                self:pushNow(false, false, false, batch)
             end
+        end)
+    end)
+end
+
+function Seekquel:reportDeviceIfDue()
+    if not self.settings:isDeviceReportDue() then
+        return
+    end
+
+    self:reportDevice()
+end
+
+function Seekquel:scheduleDeviceReport()
+    self:scheduleTask(PUSH_DEBOUNCE_SECONDS, function()
+        self:whenOnline(function()
+            self:reportDeviceIfDue()
         end)
     end)
 end
@@ -224,6 +254,7 @@ function Seekquel:reportDevice()
     self:applyServerAnswer(answer)
 
     if answer ~= nil then
+        self.settings:markDeviceReported()
         self.settings:clearInterruption()
         self.settings:clearTiming(slowest)
     end
@@ -463,6 +494,7 @@ end
 
 function Seekquel:resumeSyncing()
     self.api:clearBackoff()
+    self:scheduleDeviceReport()
     self:schedulePush()
     self:scheduleIntervalSync()
 end
@@ -481,6 +513,7 @@ end
 
 function Seekquel:onNetworkConnected()
     self.api:clearBackoff()
+    self:scheduleDeviceReport()
     self:pushNow()
 end
 
@@ -524,19 +557,20 @@ function Seekquel:hasBudget()
     return self.run_deadline == nil or os.time() < self.run_deadline
 end
 
-function Seekquel:pushNow(asked_for, leaving, continuing)
+function Seekquel:pushNow(asked_for, leaving, continuing, prepared)
     if not self:isReady() or self.digest == nil then
         return
     end
 
     local digest = self.digest
-    local highlights = self:collectHighlights(asked_for)
-    local pending, fingerprints = self:unsentHighlights(digest, highlights)
-    local days = self.settings:isEnabled("send_reading_time", true) and self:readingDays(digest) or {}
-    local history = #days > 0 and self:historyFingerprint(days) or nil
+    local pending, fingerprints, days, history
 
-    if history ~= nil and history == self.settings:historyFingerprint(digest) then
-        days = {}
+    if prepared ~= nil then
+        pending, fingerprints = prepared.pending, prepared.fingerprints
+        days, history = prepared.days, prepared.history
+    else
+        pending, fingerprints = self:unsentHighlights(digest, self:collectHighlights(asked_for))
+        days, history = self:unsentReadingDays(digest)
     end
 
     local timeout = leaving and Api.LEAVING_TIMEOUT or nil
@@ -554,24 +588,72 @@ function Seekquel:pushNow(asked_for, leaving, continuing)
             return
         end
 
-        if #pending > 0 then
+        local sendHighlights = function()
+            if #pending == 0 then
+                return true, nil
+            end
+
             if not self:hasBudget() then
+                return false, Settings.UPLOAD_HIGHLIGHTS
+            end
+
+            if self.api:pushHighlights(digest, pending, timeout) == nil then
+                return false, nil
+            end
+
+            self.settings:markHighlightsSent(digest, fingerprints)
+
+            return true, nil
+        end
+
+        local sendReadingTime = function()
+            if #days == 0 then
+                return true, nil
+            end
+
+            if not self:hasBudget() then
+                return false, Settings.UPLOAD_READING_TIME
+            end
+
+            local answer, status = self.api:pushSessions(digest, days, timeout)
+
+            if type(answer) ~= "table" then
+                if status ~= nil and status >= CLIENT_ERROR_FLOOR and status < SERVER_ERROR_FLOOR then
+                    self.settings:markHistoryRefused(digest, history)
+                end
+
+                return false, nil
+            end
+
+            self.settings:markHistorySynced(digest, history)
+
+            return true, nil
+        end
+
+        local uploads = { sendHighlights, sendReadingTime }
+
+        if self.settings:readingTimeFirst(digest) then
+            uploads = { sendReadingTime, sendHighlights }
+        end
+
+        local deferred = nil
+
+        for _index, upload in ipairs(uploads) do
+            local ok, cut = upload()
+
+            if not ok then
                 sent = false
-            elseif self.api:pushHighlights(digest, pending, timeout) ~= nil then
-                self.settings:markHighlightsSent(digest, fingerprints)
-            else
-                sent = false
+            end
+
+            if cut ~= nil then
+                deferred = cut
             end
         end
 
-        if #days > 0 then
-            if not self:hasBudget() then
-                sent = false
-            elseif type(self.api:pushSessions(digest, days, timeout)) == "table" then
-                self.settings:markHistorySynced(digest, history)
-            else
-                sent = false
-            end
+        if deferred ~= nil then
+            self.settings:markUploadDeferred(digest, deferred)
+        else
+            self.settings:clearUploadDeferred(digest)
         end
 
         if self:hasBudget() then
@@ -732,7 +814,7 @@ function Seekquel:canReachNetwork()
     return NetworkMgr:isOnline() or self.settings:isEnabled("wifi_on_demand", false)
 end
 
-function Seekquel:historyFingerprint(days)
+function Seekquel:buildHistoryFingerprint(days)
     local parts = {}
 
     for _index, day in ipairs(days) do
@@ -747,6 +829,30 @@ function Seekquel:readingDays(digest)
     local floor = synced_at and (synced_at - (HISTORY_OVERLAP_DAYS * SECONDS_PER_DAY)) or nil
 
     return self.stats:daysFor(digest, floor, self.settings:timezoneOffset())
+end
+
+function Seekquel:unsentReadingDays(digest)
+    if not self.settings:isEnabled("send_reading_time", true) then
+        return {}, nil
+    end
+
+    local days = self:readingDays(digest)
+
+    if #days == 0 then
+        return {}, nil
+    end
+
+    local fingerprint = self:buildHistoryFingerprint(days)
+
+    if fingerprint == self.settings:historyFingerprint(digest) then
+        return {}, nil
+    end
+
+    if fingerprint == self.settings:refusedHistory(digest) then
+        return {}, nil
+    end
+
+    return days, fingerprint
 end
 
 function Seekquel:whenOnline(task)
@@ -1040,16 +1146,23 @@ function Seekquel:waitingLine()
         return _("Nothing is sent for this book until you tell Seekquel which book it is.")
     end
 
+    local lines = {}
     local highlights, total = self:allHighlights()
 
     if total == 0 then
-        return _("No highlights on this book yet.")
+        table.insert(lines, _("No highlights on this book yet."))
+    else
+        table.insert(lines, self:highlightLine(highlights, total))
+
+        if total > #highlights then
+            table.insert(lines, T(_("Only the first %1 are sent."), tostring(#highlights)))
+        end
     end
 
-    local lines = { self:highlightLine(highlights, total) }
+    local days = self:unsentReadingDays(self.digest)
 
-    if total > #highlights then
-        table.insert(lines, T(_("Only the first %1 are sent."), tostring(#highlights)))
+    if #days > 0 then
+        table.insert(lines, _("Reading time is waiting to be sent."))
     end
 
     return table.concat(lines, " ")

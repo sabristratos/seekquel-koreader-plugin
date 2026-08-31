@@ -11,14 +11,20 @@ local DEFAULT_PAGES_BEFORE_PUSH = 20
 local DEFAULT_SYNC_INTERVAL_MINUTES = 15
 local SECONDS_PER_DAY = 86400
 local LEGACY_HISTORY_DAYS = 7
+local DEVICE_REPORT_INTERVAL_SECONDS = 3600
 
 local PER_BOOK_KEYS = {
     "history_synced",
     "history_fingerprint",
+    "history_refused",
+    "upload_deferred",
     "details_sent",
     "highlights_sent",
     "status_seen",
 }
+
+Settings.UPLOAD_HIGHLIGHTS = "highlights"
+Settings.UPLOAD_READING_TIME = "reading_time"
 
 function Settings:new()
     local instance = setmetatable({}, self)
@@ -73,6 +79,7 @@ function Settings:disconnect()
     self:set("pending_restart", nil)
     self:set("unreachable_until", nil)
     self:set("slowest_call", nil)
+    self:set("last_device_report_at", nil)
 
     for _index, key in ipairs(PER_BOOK_KEYS) do
         self:set(key, nil)
@@ -190,6 +197,20 @@ function Settings:recordSync(ok)
     self:set("last_sync_ok", ok == true)
 end
 
+function Settings:lastDeviceReport()
+    return tonumber(self:get("last_device_report_at"))
+end
+
+function Settings:isDeviceReportDue()
+    local last = self:lastDeviceReport()
+
+    return last == nil or os.time() - last >= DEVICE_REPORT_INTERVAL_SECONDS
+end
+
+function Settings:markDeviceReported()
+    self:set("last_device_report_at", os.time())
+end
+
 function Settings:appliedSettingsRevision()
     return tonumber(self:get("applied_settings_revision", 0)) or 0
 end
@@ -249,6 +270,50 @@ function Settings:historyFingerprint(digest)
     local prints = self:get("history_fingerprint", {})
 
     return prints[digest]
+end
+
+function Settings:refusedHistory(digest)
+    local refused = self:get("history_refused", {})
+
+    return refused[digest]
+end
+
+function Settings:markHistoryRefused(digest, fingerprint)
+    local refused = self:get("history_refused", {})
+    refused[digest] = fingerprint
+    self:set("history_refused", refused)
+end
+
+function Settings:deferredUpload(digest)
+    local deferred = self:get("upload_deferred", {})
+
+    return deferred[digest]
+end
+
+function Settings:readingTimeFirst(digest)
+    return self:deferredUpload(digest) == Settings.UPLOAD_READING_TIME
+end
+
+function Settings:markUploadDeferred(digest, kind)
+    local deferred = self:get("upload_deferred", {})
+
+    if deferred[digest] == kind then
+        return
+    end
+
+    deferred[digest] = kind
+    self:set("upload_deferred", deferred)
+end
+
+function Settings:clearUploadDeferred(digest)
+    local deferred = self:get("upload_deferred", {})
+
+    if deferred[digest] == nil then
+        return
+    end
+
+    deferred[digest] = nil
+    self:set("upload_deferred", deferred)
 end
 
 function Settings:forgetBook(digest)
