@@ -283,4 +283,61 @@ do
         settings:lastDeviceReport() == nil, settings:lastDeviceReport())
 end
 
+step("The reading-time state is remembered so the device can say why it sent none")
+do
+    local settings = fresh()
+
+    local state, recorded = settings:readingTime()
+    check("a device that has not looked yet reports nothing",
+        state == nil and recorded == nil, tostring(state))
+
+    settings:recordReadingTime("untracked", nil)
+    state = settings:readingTime()
+    check("an observation is kept", state == "untracked", state)
+
+    settings:recordReadingTime("sent", "2026-08-29")
+    state, recorded = settings:readingTime()
+    check("a later observation replaces it", state == "sent", state)
+
+    check("and carries the last day the reader's statistics recorded, which is what makes \"up to date\" checkable",
+        recorded == "2026-08-29", recorded)
+end
+
+do
+    local settings = fresh()
+    local writes = 0
+    local set = settings.set
+
+    settings.set = function(store, key, value)
+        writes = writes + 1
+
+        return set(store, key, value)
+    end
+
+    settings:recordReadingTime("sent", "2026-08-29")
+    settings:recordReadingTime("sent", "2026-08-29")
+    settings:recordReadingTime("sent", "2026-08-29")
+
+    check("an unchanged observation is not written again, because this is read on every sync tick",
+        writes == 2, writes)
+
+    settings:recordReadingTime("sent", "2026-08-30")
+    check("a newly recorded day is written even though the state did not move",
+        writes == 4, writes)
+
+    settings:recordReadingTime("waiting", "2026-08-30")
+    check("and so is a change of state", writes == 6, writes)
+end
+
+do
+    local settings = fresh()
+
+    settings:recordReadingTime("untracked", "2026-08-29")
+    settings:disconnect()
+
+    local state, recorded = settings:readingTime()
+    check("disconnecting forgets it, so a re-paired device does not report the old device's state",
+        state == nil and recorded == nil, tostring(state) .. "/" .. tostring(recorded))
+end
+
 harness.report()

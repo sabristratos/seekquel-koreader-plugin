@@ -1,5 +1,7 @@
 local ButtonDialog = require("ui/widget/buttondialog")
+local ConfirmBox = require("ui/widget/confirmbox")
 local Device = require("device")
+local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local NetworkMgr = require("ui/network/manager")
@@ -23,7 +25,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.5.5"
+local VERSION = "1.5.6"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -39,6 +41,12 @@ local SEARCH_MIN_LENGTH = 2
 local APP_QR_SIZE = 400
 local CLIENT_ERROR_FLOOR = 400
 local SERVER_ERROR_FLOOR = 500
+
+local TIME_DISABLED = "disabled"
+local TIME_NONE = "none"
+local TIME_SENT = "sent"
+local TIME_REFUSED = "refused"
+local TIME_WAITING = "waiting"
 
 local SYNC_INTERVALS = { 0, 5, 15, 30, 60 }
 local APP_LINK_URL = "https://seekquel.app/links"
@@ -263,6 +271,7 @@ end
 function Seekquel:diagnostics(slowest)
     local interruption = self.settings:lastInterruption()
     local synced_at, synced_ok = self.settings:lastSync()
+    local reading_time, reading_time_recorded = self.settings:readingTime()
 
     return {
         interrupted_during = interruption and interruption.label or nil,
@@ -271,6 +280,8 @@ function Seekquel:diagnostics(slowest)
         slowest_seconds = slowest and slowest.seconds or nil,
         last_sync_at = synced_at,
         last_sync_ok = synced_ok,
+        reading_time = reading_time,
+        reading_time_recorded = reading_time_recorded,
     }
 end
 
@@ -833,26 +844,46 @@ end
 
 function Seekquel:unsentReadingDays(digest)
     if not self.settings:isEnabled("send_reading_time", true) then
-        return {}, nil
+        return self:noReadingDays(TIME_DISABLED)
     end
 
-    local days = self:readingDays(digest)
+    local days, state = self:readingDays(digest)
+
+    if state ~= Stats.OK then
+        return self:noReadingDays(state)
+    end
 
     if #days == 0 then
-        return {}, nil
+        return self:noReadingDays(TIME_NONE)
     end
 
     local fingerprint = self:buildHistoryFingerprint(days)
 
     if fingerprint == self.settings:historyFingerprint(digest) then
-        return {}, nil
+        return self:noReadingDays(TIME_SENT, days)
     end
 
     if fingerprint == self.settings:refusedHistory(digest) then
-        return {}, nil
+        return self:noReadingDays(TIME_REFUSED, days)
     end
 
-    return days, fingerprint
+    self.settings:recordReadingTime(TIME_WAITING, self:latestRecordedDay(days))
+
+    return days, fingerprint, TIME_WAITING
+end
+
+function Seekquel:noReadingDays(state, days)
+    self.settings:recordReadingTime(state, self:latestRecordedDay(days))
+
+    return {}, nil, state
+end
+
+function Seekquel:latestRecordedDay(days)
+    if type(days) ~= "table" or days[1] == nil then
+        return nil
+    end
+
+    return days[1].date
 end
 
 function Seekquel:whenOnline(task)
@@ -1087,7 +1118,21 @@ function Seekquel:installUpdate()
 
         self.settings:setPendingRestart(VERSION, manifest.version)
         self.settings:setLatestVersion(nil)
-        UIManager:askForRestart(_("Seekquel is updated. Restart KOReader to start using it."))
+
+        UIManager:show(ConfirmBox:new({
+            text = _("Seekquel is updated. Close KOReader now to finish?"),
+            ok_text = _("Close now"),
+            ok_callback = function()
+                UIManager:broadcastEvent(Event:new("Exit", function()
+                    Device:saveSettings()
+                    UIManager:quit(85)
+                end))
+            end,
+            cancel_text = _("Later"),
+            cancel_callback = function()
+                self:notify(_("The update will finish the next time you open KOReader."))
+            end,
+        }))
     end)
 end
 
@@ -1159,13 +1204,52 @@ function Seekquel:waitingLine()
         end
     end
 
-    local days = self:unsentReadingDays(self.digest)
+    self:unsentReadingDays(self.digest)
 
-    if #days > 0 then
-        table.insert(lines, _("Reading time is waiting to be sent."))
+    local state, recorded = self.settings:readingTime()
+    local reading_time = self:readingTimeLine(state, recorded)
+
+    if reading_time ~= nil then
+        table.insert(lines, reading_time)
     end
 
     return table.concat(lines, " ")
+end
+
+function Seekquel:readingTimeLine(state, recorded)
+    if state == TIME_DISABLED then
+        return _("This device is set not to send reading time.")
+    end
+
+    if state == Stats.UNREADABLE then
+        return _("Reading time cannot be sent: KOReader's reading statistics could not be read on this device.")
+    end
+
+    if state == Stats.UNTRACKED then
+        return _("Reading time cannot be sent: KOReader is not keeping reading statistics for this book.")
+    end
+
+    if state == TIME_NONE then
+        return _("KOReader has recorded no reading time for this book since the last sync.")
+    end
+
+    if state == TIME_REFUSED then
+        return _("Reading time was not accepted and will be offered again after more reading.")
+    end
+
+    if state == TIME_WAITING then
+        return _("Reading time is waiting to be sent.")
+    end
+
+    if state == TIME_SENT then
+        if recorded == nil then
+            return _("Reading time is up to date.")
+        end
+
+        return T(_("Reading time is up to date. The last reading KOReader recorded for this book was %1."), recorded)
+    end
+
+    return nil
 end
 
 function Seekquel:highlightLine(highlights, total)

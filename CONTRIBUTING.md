@@ -45,7 +45,7 @@ Run `luacheck .` before opening a pull request. CI runs it too.
 
 ## Testing
 
-Four harnesses, and they prove different things.
+Five harnesses, and they prove different things.
 
 ### The position spec
 
@@ -68,9 +68,21 @@ spec/settings.sh
 The one you can run while editing: no server, no token, nobody approving a pairing code.
 It covers the settings store's own logic, which is where the rules that are easy to get
 subtly wrong live: a high-water mark that must not move backwards, and a diagnostic that
-has to survive being reported without being re-reported forever. Run it and the position
-spec before the two below; they take a second between them, and each has already caught a
-bug the reasoning missed.
+has to survive being reported without being re-reported forever. Run it, the position spec and
+the statistics spec before the two below; they take a second between them, and each has
+already caught a bug the reasoning missed.
+
+### The statistics spec
+
+```bash
+spec/stats.sh
+```
+
+Runnable while editing too, against a real SQLite holding a KOReader-shaped statistics
+database. It covers what the plugin reads out of KOReader's own reading statistics, and
+in particular the one distinction that matters there: a statistics database that could
+not be read and a statistics database with nothing in it are different answers. They were
+the same answer once, and reading time stopped for five days without a word to anyone.
 
 ### The Lua harness
 

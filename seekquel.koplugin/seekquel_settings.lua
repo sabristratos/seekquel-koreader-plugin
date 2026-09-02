@@ -79,6 +79,8 @@ function Settings:disconnect()
     self:set("pending_restart", nil)
     self:set("unreachable_until", nil)
     self:set("slowest_call", nil)
+    self:set("reading_time_state", nil)
+    self:set("reading_time_recorded", nil)
     self:set("last_device_report_at", nil)
 
     for _index, key in ipairs(PER_BOOK_KEYS) do
@@ -195,6 +197,19 @@ end
 function Settings:recordSync(ok)
     self:set("last_sync_at", os.time())
     self:set("last_sync_ok", ok == true)
+end
+
+function Settings:readingTime()
+    return self:get("reading_time_state"), self:get("reading_time_recorded")
+end
+
+function Settings:recordReadingTime(state, recorded)
+    if self:get("reading_time_state") == state and self:get("reading_time_recorded") == recorded then
+        return
+    end
+
+    self:set("reading_time_state", state)
+    self:set("reading_time_recorded", recorded)
 end
 
 function Settings:lastDeviceReport()

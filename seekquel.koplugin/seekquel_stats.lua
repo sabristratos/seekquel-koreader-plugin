@@ -8,6 +8,10 @@ Stats.__index = Stats
 local DB_NAME = "statistics.sqlite3"
 local MAX_DAYS = 400
 
+Stats.OK = "ok"
+Stats.UNREADABLE = "unreadable"
+Stats.UNTRACKED = "untracked"
+
 function Stats:new()
     return setmetatable({}, self)
 end
@@ -17,13 +21,13 @@ function Stats:path()
 end
 
 function Stats:daysFor(digest, since_time, offset_minutes)
-    local rows = self:query(digest, since_time, offset_minutes)
+    local result = self:query(digest, since_time, offset_minutes)
 
-    if rows == nil then
-        return {}
+    if type(result) ~= "table" then
+        return {}, Stats.UNREADABLE
     end
 
-    return rows
+    return result.days, result.state
 end
 
 function Stats:dayModifier(offset_minutes)
@@ -52,7 +56,7 @@ function Stats:query(digest, since_time, offset_minutes)
         if book_id == nil then
             conn:close()
 
-            return nil
+            return { days = {}, state = Stats.UNTRACKED }
         end
 
         local floor = math.max(0, math.floor(tonumber(since_time) or 0))
@@ -72,7 +76,7 @@ function Stats:query(digest, since_time, offset_minutes)
         conn:close()
 
         if columns == nil then
-            return nil
+            return { days = {}, state = Stats.OK }
         end
 
         local days = {}
@@ -85,7 +89,7 @@ function Stats:query(digest, since_time, offset_minutes)
             })
         end
 
-        return days
+        return { days = days, state = Stats.OK }
     end)
 
     if not ok then

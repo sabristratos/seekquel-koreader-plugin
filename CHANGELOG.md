@@ -4,6 +4,28 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.6] - 2026-09-01
+
+### Fixed
+
+- **Sync status now says why no reading time is being sent, not only when some is
+  waiting.** The screen spoke up when reading time was queued and said nothing at all
+  otherwise, so "there is nothing to send" and "I could not find out" looked identical:
+  both were silence. One reader read for five days while KOReader recorded no time
+  against the book, watched their place and their highlights keep arriving, and had no
+  way to tell that the reading time half had stopped. Sync status now names the reason
+  every time. It will tell you when KOReader is keeping no statistics for this book, when
+  its statistics cannot be read at all, when it has recorded no reading since your last
+  sync, and when the server did not accept what was sent. When everything is up to date it
+  now says so and gives you the last day KOReader recorded any reading for the book, which
+  is the line that would have caught this: "up to date" against a date three days before
+  the last evening you spent with the book says the problem is on the reader, not in the
+  sending.
+- **Your reader tells Seekquel when it cannot send reading time.** A device with nothing
+  to send reported a clean sync, which is true and useless: it reads exactly the same as
+  a device that is working. It now sends the reason, and the last day its own statistics
+  hold reading for, so this can be spotted without you having to notice and report it.
+
 ## [1.5.5] - 2026-08-31
 
 ### Fixed
