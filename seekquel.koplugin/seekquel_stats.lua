@@ -64,7 +64,10 @@ function Stats:query(digest, since_time, offset_minutes)
         local sql = string.format([[
             SELECT date(start_time, 'unixepoch', %s) AS day,
                    SUM(duration) AS seconds,
-                   COUNT(DISTINCT page) AS pages
+                   COUNT(DISTINCT page) AS pages,
+                   MAX(CASE WHEN total_pages >= 1
+                            THEN (page - 1) * 1.0 / total_pages
+                       END) AS reached
             FROM page_stat_data
             WHERE id_book = %d AND start_time >= %d
             GROUP BY day
@@ -86,6 +89,7 @@ function Stats:query(digest, since_time, offset_minutes)
                 date = columns[1][index],
                 seconds = math.floor(tonumber(columns[2][index]) or 0),
                 pages = math.floor(tonumber(columns[3][index]) or 0),
+                reached = self:reached(columns[4][index]),
             })
         end
 
@@ -99,6 +103,16 @@ function Stats:query(digest, since_time, offset_minutes)
     end
 
     return result
+end
+
+function Stats:reached(value)
+    local fraction = tonumber(value)
+
+    if fraction == nil then
+        return nil
+    end
+
+    return math.max(0, math.min(1, fraction))
 end
 
 function Stats:quote(value)

@@ -4,6 +4,26 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-09-07
+
+### Added
+
+- **Your reading history now says which chapter you reached, not just how long you
+  read.** The add-on reads the contents page out of the book file you already have open
+  and reports where you are in it, alongside the position and the reading time it already
+  sent. A day in your reading history reads "24 min, 18 pages, reached The Chain" instead
+  of stopping at the pages. Nothing new is asked of you and no setting changed: it is the
+  same two calls the add-on was already making, carrying two more numbers.
+
+  Only your device can work this out. A book file repaginates every time you change the
+  font size, so where "chapter twelve" begins is a fact about your copy on your screen
+  and about nothing else. The chapter is read off your confirmed position rather than
+  wherever the screen happens to be, so glancing at the index at the back of a book does
+  not record you as having reached the final chapter.
+
+  A file with no contents page, and the reading-position sync built into KOReader, both
+  carry on exactly as before.
+
 ## [1.5.6] - 2026-09-01
 
 ### Fixed

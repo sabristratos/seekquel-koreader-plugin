@@ -14,6 +14,7 @@ local T = require("ffi/util").template
 
 local Annotations = require("seekquel_annotations")
 local Api = require("seekquel_api")
+local Chapters = require("seekquel_chapters")
 local Metadata = require("seekquel_metadata")
 local Position = require("seekquel_position")
 local Settings = require("seekquel_settings")
@@ -25,7 +26,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.5.6"
+local VERSION = "1.6.0"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -84,6 +85,7 @@ function Seekquel:init()
     self.stats = Stats:new()
     self.annotations = Annotations:new()
     self.metadata_reader = Metadata:new()
+    self.chapters = Chapters:new()
     self.position = Position:new()
     self.updater = Updater:new(self.api)
 
@@ -116,6 +118,7 @@ function Seekquel:onReaderReady()
     self.pushed_progress = nil
 
     self.position:reset(self.metadata_reader:pageCount(self.ui))
+    self.chapters:load(self.ui)
 
     if self.digest == nil then
         return
@@ -218,6 +221,7 @@ function Seekquel:scheduleOpeningSync(digest)
         end
 
         self.position:settle(self:currentPosition())
+        self:ensureChapters()
 
         self:whenOnline(function()
             self:reportDeviceIfDue()
@@ -450,7 +454,9 @@ function Seekquel:sendProgress(timeout)
         covered,
         self:deviceName(),
         self:metadata(),
-        timeout
+        timeout,
+        self.chapters:at(percentage),
+        self.chapters:count()
     ) ~= nil
 
     if sent then
@@ -839,7 +845,28 @@ function Seekquel:readingDays(digest)
     local synced_at = self.settings:historySyncedAt(digest)
     local floor = synced_at and (synced_at - (HISTORY_OVERLAP_DAYS * SECONDS_PER_DAY)) or nil
 
-    return self.stats:daysFor(digest, floor, self.settings:timezoneOffset())
+    local days, state = self.stats:daysFor(digest, floor, self.settings:timezoneOffset())
+
+    return self:withChapters(days), state
+end
+
+function Seekquel:ensureChapters()
+    if self.chapters:count() == nil then
+        self.chapters:load(self.ui)
+    end
+end
+
+function Seekquel:withChapters(days)
+    if type(days) ~= "table" then
+        return days
+    end
+
+    for _index, day in ipairs(days) do
+        day.chapter = self.chapters:at(day.reached)
+        day.reached = nil
+    end
+
+    return days
 end
 
 function Seekquel:unsentReadingDays(digest)
