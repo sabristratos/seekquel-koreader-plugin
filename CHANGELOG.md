@@ -4,6 +4,25 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-09-08
+
+### Added
+
+- **Seekquel can now show you which part of the day you read in, and your device is the
+  only thing that knows.** KOReader writes down the moment of every page turn, so the
+  add-on now reports the hours a day's reading fell in alongside the minutes it already
+  sent. Your reading stats gain a morning, afternoon, evening and night breakdown that is
+  filled in from the history already on your reader, going back as far as your statistics
+  do, rather than starting from empty on the day you update.
+
+  The hours are read on your device's own clock and shifted by the timezone offset the
+  add-on already uses for dating a day, so a chapter finished after midnight counts as
+  night rather than as the following morning.
+
+  Nothing else changes. The daily minutes, pages and chapter are the same numbers as
+  before, and a day whose hours do not add up to it is sent without them rather than
+  putting a correct total at risk.
+
 ## [1.6.0] - 2026-09-07
 
 ### Added

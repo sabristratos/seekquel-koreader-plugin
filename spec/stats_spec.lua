@@ -65,6 +65,64 @@ do
     check("and counting the pages turned", days[1].pages == 40, days[1].pages)
 end
 
+step("A day says which hours of it were spent reading")
+
+do
+    local days = Stats:new():daysFor(DIGEST, nil, 0)
+
+    local day = days[1]
+
+    check("a day carries the hours it was read in", type(day.hours) == "table", type(day.hours))
+
+    local hours = 0
+    local seconds = 0
+
+    for hour, value in pairs(day.hours) do
+        hours = hours + 1
+        seconds = seconds + value
+
+        check("every hour is keyed as a string so it travels as an object, not a list",
+            type(hour) == "string", type(hour))
+
+        local number = tonumber(hour)
+
+        check("and names an hour of the clock", number ~= nil and number >= 0 and number <= 23, hour)
+    end
+
+    check("the fixture's evening spans two of them", hours == 2, hours)
+
+    check("and the hours account for the whole day, never more and never less",
+        seconds == day.seconds, seconds .. " vs " .. day.seconds)
+
+    local total = 0
+
+    for _index, each in ipairs(days) do
+        total = total + each.seconds
+    end
+
+    check("splitting a day by hour leaves the day totals untouched", total == 4800, total)
+
+    check("and still counts the pages turned once, not once per hour",
+        days[1].pages == 40, days[1].pages)
+end
+
+step("The hour of a day is the reader's own, not the device's")
+
+do
+    local shifted = Stats:new():daysFor(DIGEST, nil, 60)
+
+    local hours = {}
+
+    for hour in pairs(shifted[1].hours) do
+        table.insert(hours, tonumber(hour))
+    end
+
+    table.sort(hours)
+
+    check("an offset moves the reading an hour later on the clock",
+        hours[1] == 21 and hours[2] == 22, table.concat(hours, ","))
+end
+
 step("A window with nothing in it is a successful read, not a broken one")
 
 do

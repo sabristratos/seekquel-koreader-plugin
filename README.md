@@ -40,7 +40,7 @@ the add-on write to its own folder, it says so and you copy the files across as 
 | What | When |
 | --- | --- |
 | Where you are in a book | Every 20 pages, on a timer, and when you close it |
-| How long you read | Per day, from KOReader's own statistics |
+| How long you read | Per day and by hour of your day, from KOReader's own statistics |
 | Books you finish | When you reach the end, if you leave that switch on |
 | Highlights and notes | With the passage and your own comment kept apart |
 | Reading status | When you set it from the menu |

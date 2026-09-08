@@ -29,12 +29,13 @@ CREATE TABLE IF NOT EXISTS page_stat_data (
 INSERT INTO book (title, authors, pages, md5, total_read_time, total_read_pages)
 VALUES ('Toll the Hounds', 'Steven Erikson', 1280, :digest, 5400, 120);
 
--- Three evenings, an hour apart, at a steady forty seconds a page.
+-- Three evenings at a steady forty seconds a page, each one running from eight o'clock
+-- into the hour after it so a day's reading is spread across two hours rather than one.
 INSERT INTO page_stat_data (id_book, page, start_time, duration, total_pages)
 WITH RECURSIVE turn(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM turn WHERE n < 120)
 SELECT 1,
        n,
-       CAST(strftime('%s', 'now', '-' || (3 - ((n - 1) / 40)) || ' days', 'start of day', '+20 hours') AS INTEGER) + ((n % 40) * 45),
+       CAST(strftime('%s', 'now', '-' || (3 - ((n - 1) / 40)) || ' days', 'start of day', '+20 hours') AS INTEGER) + ((n % 40) * 180),
        40,
        1280
 FROM turn;
