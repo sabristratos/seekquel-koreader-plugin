@@ -26,7 +26,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.7.0"
+local VERSION = "1.7.1"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -1051,7 +1051,7 @@ function Seekquel:menuItems()
         })
     elseif update ~= nil then
         table.insert(items, {
-            text = T(_("Update the add-on to %1"), update),
+            text = self:updateItemText(update),
             keep_menu_open = false,
             callback = function()
                 self:installUpdate()
@@ -1100,6 +1100,14 @@ function Seekquel:menuItems()
     })
 end
 
+function Seekquel:updateItemText(version)
+    if not Updater.canInstall() then
+        return T(_("Version %1 needs a computer to install"), version)
+    end
+
+    return T(_("Update the add-on to %1"), version)
+end
+
 function Seekquel:appendMenuItems(items, more)
     for _index, item in ipairs(more) do
         table.insert(items, item)
@@ -1111,6 +1119,12 @@ end
 function Seekquel:installUpdate()
     if self.path == nil then
         self:notify(_("This copy cannot update itself. Download the add-on from Seekquel instead."))
+
+        return
+    end
+
+    if not Updater.canInstall() then
+        self:notify(self:updateFailureText("too_old"))
 
         return
     end
@@ -1164,6 +1178,10 @@ function Seekquel:installUpdate()
 end
 
 function Seekquel:updateFailureText(reason)
+    if reason == "too_old" then
+        return _("This version of KOReader cannot update the add-on by itself. Copy the new files across from a computer instead.")
+    end
+
     if reason == "stranded" then
         return _("The update could not be put in place and the old copy could not be restored. Copy the add-on across from a computer to get Seekquel back.")
     end

@@ -4,6 +4,23 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-09-09
+
+### Fixed
+
+- **Seekquel now works on older KOReader builds, where it used to be missing entirely.**
+  On any KOReader released before v2025.08, the add-on failed to load and showed nothing
+  at all: no menu, no pairing screen, and no message saying why. It loaded a part of
+  KOReader that only exists in newer builds, and KOReader skipped the whole add-on when
+  it could not find it.
+
+  Everything works on those builds now except the add-on updating itself, which needs
+  that same missing part. The menu says a new version is ready and that it needs a
+  computer to install, and tapping it explains to copy the files across rather than
+  turning on wifi and failing at the end of a download.
+
+  Found and fixed by [joelstitch](https://github.com/joelstitch).
+
 ## [1.7.0] - 2026-09-08
 
 ### Added

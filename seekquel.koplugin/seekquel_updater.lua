@@ -1,8 +1,12 @@
-local Archiver = require("ffi/archiver")
+local archiver_loaded, Archiver = pcall(require, "ffi/archiver")
 local ffiUtil = require("ffi/util")
 local logger = require("logger")
 local sha256 = require("ffi/sha2").sha256
 local util = require("util")
+
+if not archiver_loaded then
+    Archiver = nil
+end
 
 local Updater = {}
 Updater.__index = Updater
@@ -59,7 +63,17 @@ function Updater.isSafeName(name)
         and name:sub(1, 1) ~= "/"
 end
 
+function Updater.canInstall()
+    return Archiver ~= nil
+end
+
 function Updater:install(path, files)
+    if not Updater.canInstall() then
+        logger.warn("Seekquel: this KOReader cannot unpack an update, so the add-on cannot replace itself")
+
+        return false, "too_old"
+    end
+
     if type(path) ~= "string" or path == "" then
         return false, "no_path"
     end

@@ -27,4 +27,4 @@ MSYS_NO_PATHCONV=1 docker run --rm \
     --entrypoint sh \
     -v "$MOUNT":/plugin \
     "$IMAGE" \
-    -c 'cd /opt/koreader/lib/koreader && ./luajit -e "require(\"setupkoenv\"); dofile(\"/plugin/spec/updater.lua\")"'
+    -c 'cd /opt/koreader/lib/koreader && ./luajit -e "require(\"setupkoenv\"); dofile(\"/plugin/spec/updater.lua\")" && ./luajit -e "require(\"setupkoenv\"); dofile(\"/plugin/spec/updater_noarchiver.lua\")"'
