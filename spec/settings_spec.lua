@@ -106,6 +106,9 @@ do
     settings:recordTiming("PUT /device", 61)
     settings:markUnreachable(120)
     settings:markHistorySynced("digest")
+    settings:setReadingSnapshot({ date = "2026-09-10" })
+    settings:recordReadingSummary("digest", { date = "2026-09-10" })
+    settings:setDismissedResume("digest", 0.4)
 
     settings:disconnect()
 
@@ -113,6 +116,9 @@ do
     check("the slowest call goes with it", settings:slowestCall() == nil, "still stored")
     check("the backoff goes with it", settings:isUnreachable() == false, "still backing off")
     check("the per-book marks go too", settings:historySyncedAt("digest") == nil, "still marked")
+    check("the account snapshot goes too", settings:readingSnapshot() == nil, "still stored")
+    check("the book summary goes too", settings:readingSummary("digest") == nil, "still stored")
+    check("the declined resume place goes too", settings:dismissedResume("digest") == nil, "still stored")
 end
 
 step("The unreachable window")

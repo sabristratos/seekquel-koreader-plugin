@@ -1,7 +1,7 @@
 # Seekquel for KOReader
 
-Sends your reading to [Seekquel](https://seekquel.app): where you are in each book, how
-long you read, the books you finish, and your highlights.
+Keeps your reading connected with [Seekquel](https://seekquel.app): where you are in each
+book, how long you read, the books you finish, and your highlights.
 
 Works anywhere KOReader does, including Kindle, Kobo, PocketBook, Cervantes, reMarkable,
 Android, Linux and macOS.
@@ -88,6 +88,19 @@ sent to the book you corrected away from.
 Once a file is linked you can set its status and rate it from **Tools > Seekquel**,
 without opening the app.
 
+## Resuming from Seekquel
+
+Open a linked book while online and the add-on checks whether Seekquel has a later place
+for it. This includes progress you logged from a hardcover, an audiobook, another edition
+or another app. KOReader asks before moving and leaves the book where it is if you say no.
+
+The match is by percentage. A printed page and an EPUB location do not line up exactly,
+so KOReader moves to the closest place in this file. You can ask again at any time from
+**Tools > Seekquel > Resume from Seekquel**.
+
+Moving to that place does not add pages or reading time. If you keep the KOReader place,
+that choice is remembered until Seekquel moves farther ahead.
+
 ## Settings
 
 Everything is under **Tools > Seekquel > Settings**.
@@ -109,10 +122,16 @@ Everything is under **Tools > Seekquel > Settings**.
   can be set from Seekquel instead of from here.
 - **Turn on Wi-Fi to sync** is off by default. With it off, syncing waits for a connection
   you made yourself, and your radio stays off.
+- **Show a reading summary after Sync now** is on by default. It shows today's minutes,
+  pages, chapter and progress for the open book. Automatic syncs stay quiet.
 
 **Sync status** tells you when the last sync was and whether all of it went through, which
 book the open file is linked to, and how many highlights are sitting on it. If a sync
 stopped part way through, it says which step it stopped on.
+
+**Today's reading** opens the book recap again. **Today in Seekquel** refreshes your
+account's daily targets and current streak, then keeps that answer on the device for the
+next time it is offline.
 
 That last part is worth knowing about, because it is how a freeze gets reported at all. The
 add-on writes down what it is about to do before each message it sends and clears it once
