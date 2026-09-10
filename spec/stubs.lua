@@ -36,9 +36,16 @@ local function widget(kind)
 end
 
 preload("ui/widget/infomessage", widget("InfoMessage"))
+preload("ui/widget/confirmbox", widget("ConfirmBox"))
 preload("ui/widget/inputdialog", widget("InputDialog"))
 preload("ui/widget/buttondialog", widget("ButtonDialog"))
 preload("ui/widget/qrmessage", widget("QRMessage"))
+
+preload("ui/event", {
+    new = function(_, name, value)
+        return { name = name, value = value }
+    end,
+})
 
 preload("ui/uimanager", {
     show = function(_, w) return w end,
@@ -97,6 +104,10 @@ preload("ffi/util", {
 })
 
 preload("ffi/sha2", { md5 = md5lib.sumhexa })
+
+preload("util", {
+    makePath = function() return true end,
+})
 
 preload("logger", {
     warn = function(...)

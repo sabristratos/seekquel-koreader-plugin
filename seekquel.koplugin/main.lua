@@ -17,6 +17,7 @@ local Api = require("seekquel_api")
 local Chapters = require("seekquel_chapters")
 local Metadata = require("seekquel_metadata")
 local Position = require("seekquel_position")
+local Recap = require("seekquel_recap")
 local Settings = require("seekquel_settings")
 local Stats = require("seekquel_stats")
 local Updater = require("seekquel_updater")
@@ -26,12 +27,13 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.7.1"
+local VERSION = "1.8.0"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
 local PUSH_DEBOUNCE_SECONDS = 5
 local OPEN_DELAY_SECONDS = 3
+local RESUME_SETTLE_DELAY_SECONDS = 0.1
 local METADATA_DELAY_SECONDS = 20
 local SYNC_BUDGET_SECONDS = 20
 local LEAVING_BUDGET_SECONDS = 5
@@ -77,6 +79,7 @@ local SWITCHES = {
     { key = "auto_sync", default = true, label = _("Sync while reading") },
     { key = "auto_sync_highlights", default = true, label = _("Send highlights automatically") },
     { key = "wifi_on_demand", default = false, label = _("Turn on Wi-Fi to sync") },
+    { key = "show_reading_summary", default = true, label = _("Show a reading summary after Sync now") },
 }
 
 function Seekquel:init()
@@ -225,7 +228,11 @@ function Seekquel:scheduleOpeningSync(digest)
 
         self:whenOnline(function()
             self:reportDeviceIfDue()
-            self:ensureDocument()
+            local state = self:loadDocument(digest)
+
+            if self:offerResume(state, true) then
+                return
+            end
 
             local batch = self:unsyncedBatch()
 
@@ -270,6 +277,8 @@ function Seekquel:reportDevice()
         self.settings:clearInterruption()
         self.settings:clearTiming(slowest)
     end
+
+    return answer
 end
 
 function Seekquel:diagnostics(slowest)
@@ -314,6 +323,10 @@ function Seekquel:applyServerAnswer(answer)
 
     if type(answer.plugin_version) == "string" then
         self.settings:setLatestVersion(answer.plugin_version)
+    end
+
+    if type(answer.reading_snapshot) == "table" then
+        self.settings:setReadingSnapshot(answer.reading_snapshot)
     end
 
     self:applyRequestedSettings(answer)
@@ -387,9 +400,105 @@ end
 
 function Seekquel:ensureDocument()
     self:sendProgress()
-    self.document_state = self.api:document(self.digest)
 
-    return self.document_state
+    return self:loadDocument(self.digest)
+end
+
+function Seekquel:loadDocument(digest)
+    local state = self.api:document(digest)
+
+    if type(state) == "table" then
+        self.document_state = state
+    end
+
+    return state
+end
+
+function Seekquel:offerResume(state, automatic)
+    if type(state) ~= "table" or self.digest == nil then
+        return false
+    end
+
+    local digest = self.digest
+    local dismissed = automatic and self.settings:dismissedResume(digest) or nil
+    local target = self.position:resumeTarget(state.resume, dismissed)
+
+    if target == nil then
+        return false
+    end
+
+    local percentage = math.floor((target * 100) + 0.5)
+
+    UIManager:show(ConfirmBox:new({
+        text = T(_("Seekquel has this book at %1%%. KOReader will move to the closest place in this file."), tostring(percentage)),
+        ok_text = _("Continue there"),
+        ok_callback = function()
+            if self.digest ~= digest then
+                return
+            end
+
+            self.settings:setDismissedResume(digest, nil)
+            self:goToResume(target)
+        end,
+        cancel_text = _("Keep this place"),
+        cancel_callback = function()
+            if self.digest ~= digest then
+                return
+            end
+
+            self.settings:setDismissedResume(digest, target)
+            self:pushNow(true)
+        end,
+    }))
+
+    return true
+end
+
+function Seekquel:goToResume(target)
+    local digest = self.digest
+    local ok = pcall(function()
+        if self.ui.paging ~= nil then
+            local page_count = tonumber(self.metadata_reader:pageCount(self.ui))
+
+            if page_count == nil or page_count < 1 then
+                error("page count unavailable")
+            end
+
+            local page = math.max(1, math.min(page_count, math.floor((target * page_count) + 0.5)))
+            self.ui:handleEvent(Event:new("GotoPage", page))
+        else
+            self.ui:handleEvent(Event:new("GotoPercent", target * 100))
+        end
+    end)
+
+    if not ok then
+        self:notify(_("KOReader could not move to that place."))
+
+        return
+    end
+
+    self:scheduleTask(RESUME_SETTLE_DELAY_SECONDS, function()
+        if self.digest ~= digest then
+            return
+        end
+
+        local progress, percentage = self:currentPosition()
+
+        if progress == nil then
+            self:notify(_("KOReader could not save that place."))
+
+            return
+        end
+
+        self.position:settle(progress, percentage)
+        self.pushed_progress = nil
+
+        if type(self.document_state) == "table" then
+            self.document_state.resume = nil
+        end
+
+        self:pushNow(true)
+    end)
 end
 
 function Seekquel:scheduleFileDetails(digest)
@@ -574,7 +683,7 @@ function Seekquel:hasBudget()
     return self.run_deadline == nil or os.time() < self.run_deadline
 end
 
-function Seekquel:pushNow(asked_for, leaving, continuing, prepared)
+function Seekquel:pushNow(asked_for, leaving, continuing, prepared, completed)
     if not self:isReady() or self.digest == nil then
         return
     end
@@ -601,6 +710,10 @@ function Seekquel:pushNow(asked_for, leaving, continuing, prepared)
 
         if not self:refreshLink(digest) then
             self.settings:recordSync(sent)
+
+            if completed ~= nil then
+                completed(sent)
+            end
 
             return
         end
@@ -682,6 +795,10 @@ function Seekquel:pushNow(asked_for, leaving, continuing, prepared)
         end
 
         self.settings:recordSync(sent)
+
+        if completed ~= nil then
+            completed(sent)
+        end
     end
 
     if leaving then
@@ -788,11 +905,7 @@ function Seekquel:refreshLink(digest)
         return true
     end
 
-    local state = self.api:document(digest)
-
-    if type(state) == "table" then
-        self.document_state = state
-    end
+    self:loadDocument(digest)
 
     return self:isLinked()
 end
@@ -807,8 +920,115 @@ function Seekquel:syncNow()
     end
 
     self.api:clearBackoff()
-    self:pushNow(true)
-    self:notify(_("Syncing in the background."))
+    self:pushNow(true, false, false, nil, function(synced)
+        if self.settings:isEnabled("show_reading_summary", true) then
+            self:showReadingSummary(synced)
+        elseif synced then
+            self:notify(_("Sync complete."))
+        else
+            self:notify(_("Some reading is still waiting to sync."))
+        end
+    end)
+end
+
+function Seekquel:resumeFromSeekquel()
+    local obstacle = self:syncObstacle()
+
+    if obstacle ~= nil then
+        self:notify(obstacle)
+
+        return
+    end
+
+    self.api:clearBackoff()
+    self:whenOnline(function()
+        local state = self:loadDocument(self.digest)
+
+        if not self:offerResume(state, false) then
+            self:notify(_("Seekquel has no newer place for this book."))
+        end
+    end)
+end
+
+function Seekquel:todayDate()
+    local offset = self.settings:timezoneOffset()
+
+    if offset == nil then
+        return os.date("%Y-%m-%d")
+    end
+
+    return os.date("!%Y-%m-%d", os.time() + (offset * SECONDS_PER_MINUTE))
+end
+
+function Seekquel:readingSummary()
+    if self.digest == nil then
+        return nil, Stats.UNTRACKED
+    end
+
+    local today = self:todayDate()
+    local days, state = self:readingDays(self.digest)
+
+    if state ~= Stats.OK then
+        local cached = self.settings:readingSummary(self.digest)
+
+        if type(cached) == "table" and cached.date == today then
+            return cached, "cached"
+        end
+
+        return nil, state
+    end
+
+    local day = nil
+
+    for _index, candidate in ipairs(days) do
+        if candidate.date == today then
+            day = candidate
+            break
+        end
+    end
+
+    local _, percentage = self.position:reportable()
+    local chapter = day and day.chapter or self.chapters:at(percentage)
+    local summary = {
+        date = today,
+        seconds = day and day.seconds or 0,
+        pages = day and day.pages or 0,
+        chapter = chapter,
+        chapter_count = self.chapters:count(),
+        percentage = percentage and math.floor((percentage * 100) + 0.5) or nil,
+        recorded_at = os.time(),
+    }
+
+    self.settings:recordReadingSummary(self.digest, summary)
+
+    return summary, state
+end
+
+function Seekquel:showReadingSummary(synced)
+    local summary, state = self:readingSummary()
+
+    self:notify(Recap.reading(summary, state, synced))
+end
+
+function Seekquel:showAccountSnapshot()
+    local display = function()
+        local snapshot = self.settings:readingSnapshot()
+        local updated = type(snapshot) == "table" and tonumber(snapshot.generated_at) or nil
+
+        self:notify(Recap.account(snapshot, updated and self:agoLabel(updated) or nil))
+    end
+
+    if not self:canReachNetwork() then
+        display()
+
+        return
+    end
+
+    self.api:clearBackoff()
+    self:whenOnline(function()
+        self:reportDevice()
+        display()
+    end)
 end
 
 function Seekquel:syncObstacle()
@@ -1087,10 +1307,33 @@ function Seekquel:menuItems()
             end,
         },
         {
+            text = _("Resume from Seekquel"),
+            enabled = self:isLinked(),
+            keep_menu_open = false,
+            callback = function()
+                self:resumeFromSeekquel()
+            end,
+        },
+        {
             text = _("Sync status"),
             keep_menu_open = false,
             callback = function()
                 self:notify(self:syncStatusText())
+            end,
+        },
+        {
+            text = _("Today's reading"),
+            enabled = self:isReady(),
+            keep_menu_open = false,
+            callback = function()
+                self:showReadingSummary()
+            end,
+        },
+        {
+            text = _("Today in Seekquel"),
+            keep_menu_open = false,
+            callback = function()
+                self:showAccountSnapshot()
             end,
         },
         {

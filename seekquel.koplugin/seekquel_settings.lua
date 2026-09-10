@@ -21,6 +21,8 @@ local PER_BOOK_KEYS = {
     "details_sent",
     "highlights_sent",
     "status_seen",
+    "reading_summaries",
+    "resume_dismissed",
 }
 
 Settings.UPLOAD_HIGHLIGHTS = "highlights"
@@ -82,6 +84,7 @@ function Settings:disconnect()
     self:set("reading_time_state", nil)
     self:set("reading_time_recorded", nil)
     self:set("last_device_report_at", nil)
+    self:set("reading_snapshot", nil)
 
     for _index, key in ipairs(PER_BOOK_KEYS) do
         self:set(key, nil)
@@ -224,6 +227,38 @@ end
 
 function Settings:markDeviceReported()
     self:set("last_device_report_at", os.time())
+end
+
+function Settings:readingSnapshot()
+    return self:get("reading_snapshot")
+end
+
+function Settings:setReadingSnapshot(snapshot)
+    self:set("reading_snapshot", snapshot)
+end
+
+function Settings:readingSummary(digest)
+    local summaries = self:get("reading_summaries", {})
+
+    return summaries[digest]
+end
+
+function Settings:recordReadingSummary(digest, summary)
+    local summaries = self:get("reading_summaries", {})
+    summaries[digest] = summary
+    self:set("reading_summaries", summaries)
+end
+
+function Settings:dismissedResume(digest)
+    local dismissed = self:get("resume_dismissed", {})
+
+    return tonumber(dismissed[digest])
+end
+
+function Settings:setDismissedResume(digest, percentage)
+    local dismissed = self:get("resume_dismissed", {})
+    dismissed[digest] = percentage
+    self:set("resume_dismissed", dismissed)
 end
 
 function Settings:appliedSettingsRevision()

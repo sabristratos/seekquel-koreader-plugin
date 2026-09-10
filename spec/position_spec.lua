@@ -224,4 +224,23 @@ do
         about(reported(short), 0.5), reported(short))
 end
 
+step("A newer place from Seekquel can be offered safely")
+
+do
+    local position = opened(75)
+    local resume = { from_percentage = at(75), to_percentage = at(120) }
+
+    check("a place ahead of this file is offered",
+        about(position:resumeTarget(resume), at(120)), position:resumeTarget(resume))
+    check("a place already reached on this device is not offered",
+        position:resumeTarget({ from_percentage = at(30), to_percentage = at(60) }) == nil, "offered")
+    check("the end of a book is not treated as a place to resume",
+        position:resumeTarget({ from_percentage = at(75), to_percentage = 1 }) == nil, "offered")
+    check("declining one place suppresses that same offer",
+        position:resumeTarget(resume, at(120)) == nil, "offered")
+    check("reading farther elsewhere creates a new offer",
+        about(position:resumeTarget({ from_percentage = at(75), to_percentage = at(150) }, at(120)), at(150)),
+        position:resumeTarget({ from_percentage = at(75), to_percentage = at(150) }, at(120)))
+end
+
 harness.report()

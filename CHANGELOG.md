@@ -4,6 +4,29 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-09-10
+
+### Added
+
+- **Sync now ends with a short reading recap.** It shows today's minutes and pages for
+  the open book, the chapter reached when the file has a contents page, and the current
+  progress through the book. Automatic syncs stay quiet. The summary can be switched
+  off from the reader or from Seekquel, and Today's reading opens it again at any time.
+
+- **Today in Seekquel brings the account's current day back to the reader.** Open it to
+  refresh today's minutes and pages against their targets, the number of daily goals
+  reached, and the current streak. The last answer stays on the device for times when it
+  has no connection.
+
+- **A place you logged elsewhere can now come back to KOReader.** Open a linked book and
+  the add-on checks whether Seekquel has you farther through it, then asks before moving
+  to the closest place in this file. This works when the other reading was a hardcover,
+  an audiobook, another edition or another app.
+
+  The move is approximate because different formats do not share page numbers. It never
+  adds pages or reading time. Keeping the KOReader place suppresses the same offer until
+  Seekquel moves farther ahead, and Resume from Seekquel lets you check again.
+
 ## [1.7.1] - 2026-09-09
 
 ### Fixed

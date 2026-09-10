@@ -7,6 +7,7 @@ local CONFIRM_TURNS = 3
 local MIN_TOLERANCE = 0.001
 local MAX_TOLERANCE = 0.05
 local MAX_COVERED = 1
+local RESUME_TOLERANCE = 0.005
 
 function Position:new()
     return setmetatable({}, self):reset()
@@ -128,6 +129,35 @@ function Position:settle(progress, percent)
 
     self.anchor = { progress = progress, percent = tonumber(percent) or 0 }
     self.visit = nil
+end
+
+function Position:resumeTarget(resume, dismissed)
+    if type(resume) ~= "table" then
+        return nil
+    end
+
+    local source = tonumber(resume.from_percentage)
+    local target = tonumber(resume.to_percentage)
+    local reached = self.anchor and tonumber(self.anchor.percent) or nil
+    local ignored = tonumber(dismissed)
+
+    if source == nil or source < 0 or source > 1 or target == nil or target <= 0 or target >= 1 then
+        return nil
+    end
+
+    if target - source < RESUME_TOLERANCE then
+        return nil
+    end
+
+    if reached ~= nil and reached >= target - RESUME_TOLERANCE then
+        return nil
+    end
+
+    if ignored ~= nil and math.abs(ignored - target) < RESUME_TOLERANCE then
+        return nil
+    end
+
+    return target
 end
 
 function Position:commit()
