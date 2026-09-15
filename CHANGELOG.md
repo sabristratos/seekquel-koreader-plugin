@@ -4,6 +4,15 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-09-15
+
+### Added
+
+- **Highlight colours now reach Seekquel.** A highlight painted red, orange, yellow,
+  green, olive, cyan, blue or purple arrives in the nearest of the five colours the app
+  offers. Gray arrives without a colour. Highlights that already carry a colour are sent
+  once more after updating, so the ones synced before this version pick theirs up too.
+
 ## [1.8.0] - 2026-09-10
 
 ### Added

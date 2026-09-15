@@ -2,6 +2,7 @@ package.path = "/plugin/seekquel.koplugin/?.lua;/plugin/spec/?.lua;" .. package.
 
 local Position = require("seekquel_position")
 local harness = require("harness")
+local json = require("dkjson")
 
 local check = harness.check
 local step = harness.step
@@ -241,6 +242,32 @@ do
     check("reading farther elsewhere creates a new offer",
         about(position:resumeTarget({ from_percentage = at(75), to_percentage = at(150) }, at(120)), at(150)),
         position:resumeTarget({ from_percentage = at(75), to_percentage = at(150) }, at(120)))
+end
+
+step("The cases shared with the built-in reader")
+
+do
+    local file = assert(io.open("/plugin/spec/position_cases.json", "r"))
+    local cases = json.decode(file:read("*a")).cases
+
+    file:close()
+
+    for _, case in ipairs(cases) do
+        local position = Position:new()
+        local agrees = true
+
+        position:reset(case.pages)
+
+        for index, percent in ipairs(case.observe) do
+            position:observe("step-" .. index, percent)
+
+            if not about(reported(position), case.reported[index]) then
+                agrees = false
+            end
+        end
+
+        check(case.name, agrees, reported(position))
+    end
 end
 
 harness.report()
