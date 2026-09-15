@@ -43,7 +43,7 @@ the add-on write to its own folder, it says so and you copy the files across as 
 | How long you read | Per day and by hour of your day, from KOReader's own statistics |
 | Books you finish | When you reach the end, if you leave that switch on |
 | Highlights and notes | With the passage and your own comment kept apart |
-| Reading status | When you set it from the menu |
+| Reading status | When you set it from the menu or from a gesture |
 | The book's own details | Once per file, the first time you open it |
 
 That last row is everything the file itself carries: the description, the ISBN, the
@@ -100,6 +100,22 @@ so KOReader moves to the closest place in this file. You can ask again at any ti
 
 Moving to that place does not add pages or reading time. If you keep the KOReader place,
 that choice is remembered until Seekquel moves farther ahead.
+
+## Gestures
+
+Five Seekquel actions are offered to KOReader's own Gesture Manager, so they can be put
+on a tap, a swipe, a multiswipe, or a key on a reader that has buttons. Assign them under
+**Tools > Gesture Manager**, or in a profile, the same way as any other action:
+
+- **Seekquel: sync now**
+- **Seekquel: sync status**
+- **Seekquel: today's reading**
+- **Seekquel: resume from Seekquel**
+- **Seekquel: set the book's status**, which asks which of the four statuses you mean when
+  you assign it, so one gesture can mark a book finished
+
+Nothing is bound out of the box. A gesture fired with no book open, or on a file that is
+not linked to a book yet, tells you so rather than doing nothing.
 
 ## Settings
 

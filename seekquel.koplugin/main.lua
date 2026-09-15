@@ -1,6 +1,7 @@
 local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
 local Device = require("device")
+local Dispatcher = require("dispatcher")
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
@@ -27,11 +28,12 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.9.0"
+local VERSION = "1.10.0"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
 local PUSH_DEBOUNCE_SECONDS = 5
+local MANUAL_SYNC_REPEAT_SECONDS = 3
 local OPEN_DELAY_SECONDS = 3
 local RESUME_SETTLE_DELAY_SECONDS = 0.1
 local METADATA_DELAY_SECONDS = 20
@@ -69,6 +71,8 @@ local KOREADER_STATUSES = {
 
 local NO_STATUS = "none"
 
+local NOT_LINKED_TEXT = _("Nothing is sent for this book until you tell Seekquel which book it is.")
+
 local RATINGS = { 1, 2, 3, 4, 5 }
 
 local SWITCHES = {
@@ -99,6 +103,7 @@ function Seekquel:init()
     self.push_scheduled = false
     self.pairing_active = false
     self.run_deadline = nil
+    self.manual_sync_at = nil
     self.scheduled = {}
     self.interval_task = nil
 
@@ -108,6 +113,7 @@ function Seekquel:init()
         logger.warn("Seekquel: previous run stopped during", interrupted.label)
     end
 
+    self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
 end
 
@@ -910,17 +916,23 @@ function Seekquel:refreshLink(digest)
     return self:isLinked()
 end
 
+function Seekquel:syncedJustNow()
+    return self.manual_sync_at ~= nil and (os.time() - self.manual_sync_at) < MANUAL_SYNC_REPEAT_SECONDS
+end
+
 function Seekquel:syncNow()
-    local obstacle = self:syncObstacle()
+    if self:syncedJustNow() then
+        return
+    end
 
-    if obstacle ~= nil then
-        self:notify(obstacle)
-
+    if self:blockedBy(self:syncObstacle()) then
         return
     end
 
     self.api:clearBackoff()
     self:pushNow(true, false, false, nil, function(synced)
+        self.manual_sync_at = os.time()
+
         if self.settings:isEnabled("show_reading_summary", true) then
             self:showReadingSummary(synced)
         elseif synced then
@@ -932,11 +944,7 @@ function Seekquel:syncNow()
 end
 
 function Seekquel:resumeFromSeekquel()
-    local obstacle = self:syncObstacle()
-
-    if obstacle ~= nil then
-        self:notify(obstacle)
-
+    if self:blockedBy(self:syncObstacle()) then
         return
     end
 
@@ -1031,7 +1039,7 @@ function Seekquel:showAccountSnapshot()
     end)
 end
 
-function Seekquel:syncObstacle()
+function Seekquel:bookObstacle()
     if not self:isReady() then
         return _("Open a book first.")
     end
@@ -1040,11 +1048,45 @@ function Seekquel:syncObstacle()
         return _("KOReader has not finished reading this file, so there is nothing to send yet. Try again in a moment.")
     end
 
+    return nil
+end
+
+function Seekquel:linkObstacle()
+    local obstacle = self:bookObstacle()
+
+    if obstacle ~= nil then
+        return obstacle
+    end
+
+    if not self:isLinked() then
+        return NOT_LINKED_TEXT
+    end
+
+    return nil
+end
+
+function Seekquel:syncObstacle()
+    local obstacle = self:bookObstacle()
+
+    if obstacle ~= nil then
+        return obstacle
+    end
+
     if not self:canReachNetwork() then
         return _("No connection. Your reading will sync the next time you are online.")
     end
 
     return nil
+end
+
+function Seekquel:blockedBy(obstacle)
+    if obstacle == nil then
+        return false
+    end
+
+    self:notify(obstacle)
+
+    return true
 end
 
 function Seekquel:canReachNetwork()
@@ -1213,6 +1255,97 @@ end
 
 function Seekquel:deviceName()
     return self.settings:get("device_name") or Device.model or "KOReader"
+end
+
+function Seekquel:onDispatcherRegisterActions()
+    local keys, labels = {}, {}
+
+    for _index, status in ipairs(STATUSES) do
+        table.insert(keys, status.key)
+        table.insert(labels, status.label)
+    end
+
+    Dispatcher:registerAction("seekquel_sync_now", {
+        category = "none",
+        event = "SeekquelSyncNow",
+        title = _("Seekquel: sync now"),
+        reader = true,
+    })
+
+    Dispatcher:registerAction("seekquel_sync_status", {
+        category = "none",
+        event = "SeekquelSyncStatus",
+        title = _("Seekquel: sync status"),
+        general = true,
+    })
+
+    Dispatcher:registerAction("seekquel_todays_reading", {
+        category = "none",
+        event = "SeekquelTodaysReading",
+        title = _("Seekquel: today's reading"),
+        reader = true,
+    })
+
+    Dispatcher:registerAction("seekquel_resume", {
+        category = "none",
+        event = "SeekquelResume",
+        title = _("Seekquel: resume from Seekquel"),
+        reader = true,
+    })
+
+    Dispatcher:registerAction("seekquel_set_status", {
+        category = "string",
+        event = "SeekquelSetStatus",
+        title = _("Seekquel: set the book's status"),
+        args = keys,
+        toggle = labels,
+        reader = true,
+        separator = true,
+    })
+end
+
+function Seekquel:onSeekquelSyncNow()
+    self:syncNow()
+
+    return true
+end
+
+function Seekquel:onSeekquelSyncStatus()
+    self:notify(self:syncStatusText())
+
+    return true
+end
+
+function Seekquel:onSeekquelTodaysReading()
+    if not self:blockedBy(self:bookObstacle()) then
+        self:showReadingSummary()
+    end
+
+    return true
+end
+
+function Seekquel:onSeekquelResume()
+    if not self:blockedBy(self:linkObstacle()) then
+        self:resumeFromSeekquel()
+    end
+
+    return true
+end
+
+function Seekquel:onSeekquelSetStatus(status)
+    if self:blockedBy(self:linkObstacle()) then
+        return true
+    end
+
+    for _index, candidate in ipairs(STATUSES) do
+        if candidate.key == status then
+            self:setStatus(candidate.key, candidate.label)
+
+            break
+        end
+    end
+
+    return true
 end
 
 function Seekquel:addToMainMenu(menu_items)
@@ -1476,7 +1609,7 @@ end
 
 function Seekquel:waitingLine()
     if not self:isLinked() then
-        return _("Nothing is sent for this book until you tell Seekquel which book it is.")
+        return NOT_LINKED_TEXT
     end
 
     local lines = {}
