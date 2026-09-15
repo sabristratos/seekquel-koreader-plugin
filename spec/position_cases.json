@@ -1,0 +1,64 @@
+{
+  "cases": [
+    {
+      "name": "the first position is where the reader is",
+      "pages": 300,
+      "observe": [0.1],
+      "reported": [0.1]
+    },
+    {
+      "name": "a small step forward is followed at once",
+      "pages": 300,
+      "observe": [0.1, 0.105],
+      "reported": [0.1, 0.105]
+    },
+    {
+      "name": "a leap is held until three page turns confirm it",
+      "pages": 300,
+      "observe": [0.1, 0.3, 0.302, 0.304, 0.306],
+      "reported": [0.1, 0.1, 0.1, 0.1, 0.306]
+    },
+    {
+      "name": "coming back from a leap is an ordinary move",
+      "pages": 300,
+      "observe": [0.1, 0.3, 0.11],
+      "reported": [0.1, 0.1, 0.11]
+    },
+    {
+      "name": "a second leap replaces the first rather than confirming it",
+      "pages": 300,
+      "observe": [0.1, 0.3, 0.5, 0.502, 0.504, 0.506],
+      "reported": [0.1, 0.1, 0.1, 0.1, 0.1, 0.506]
+    },
+    {
+      "name": "turning back is accepted at once",
+      "pages": 300,
+      "observe": [0.5, 0.1],
+      "reported": [0.5, 0.1]
+    },
+    {
+      "name": "redrawing the same page confirms nothing",
+      "pages": 300,
+      "observe": [0.1, 0.3, 0.3, 0.3, 0.3, 0.3],
+      "reported": [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    },
+    {
+      "name": "a step is measured against the length of the book",
+      "pages": 1000,
+      "observe": [0.5, 0.502, 0.532],
+      "reported": [0.5, 0.502, 0.502]
+    },
+    {
+      "name": "a file with no length still moves on a small step",
+      "pages": null,
+      "observe": [0.5, 0.505],
+      "reported": [0.5, 0.505]
+    },
+    {
+      "name": "a very short file cannot make every move continuous",
+      "pages": 4,
+      "observe": [0.5, 0.56],
+      "reported": [0.5, 0.5]
+    }
+  ]
+}

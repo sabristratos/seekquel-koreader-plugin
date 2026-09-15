@@ -31,7 +31,13 @@ function Annotations:collect(annotations)
 end
 
 function Annotations:fingerprint(payload)
-    return md5(tostring(payload.text or "") .. "|" .. tostring(payload.note or ""))
+    local parts = tostring(payload.text or "") .. "|" .. tostring(payload.note or "")
+
+    if payload.color ~= nil then
+        parts = parts .. "|" .. tostring(payload.color)
+    end
+
+    return md5(parts)
 end
 
 function Annotations:isHighlight(annotation)
@@ -49,6 +55,7 @@ function Annotations:toPayload(annotation)
         chapter = annotation.chapter,
         page = tonumber(annotation.pageno),
         created_at = annotation.datetime,
+        color = annotation.color,
     }
 end
 

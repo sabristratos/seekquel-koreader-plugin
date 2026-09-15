@@ -114,6 +114,7 @@ local plugin = Seekquel:new({
                     pageno = 219,
                     pos0 = "/body/DocFragment[6]/body/p[41]/text().0",
                     drawer = "lighten",
+                    color = "yellow",
                 },
                 {
                     datetime = "2026-08-08 23:02:55",
@@ -315,14 +316,35 @@ local highlights = plugin.annotations:collect(plugin.ui.annotation.annotations)
 check("only the highlight is sent, not the bookmark", #highlights == 1, "#highlights = " .. #highlights)
 check("the passage and the note both travel",
     highlights[1] and highlights[1].text == "Children are dying." and highlights[1].note == "the refrain")
+check("the color travels unchanged", highlights[1] and highlights[1].color == "yellow",
+    highlights[1] and tostring(highlights[1].color))
 
-step("13. Reaching the end finishes the book")
+step("13. Only the highlight's color changing still counts as a change")
+local _, first_fingerprints = plugin:unsentHighlights(DIGEST, highlights)
+plugin.settings:markHighlightsSent(DIGEST, first_fingerprints)
+
+local _, resent_fingerprints = plugin:unsentHighlights(DIGEST, highlights)
+check("nothing pending once the same highlight is marked sent", next(resent_fingerprints) == nil,
+    dkjson.encode(resent_fingerprints))
+
+plugin.ui.annotation.annotations[1].color = "red"
+local recolored_highlights = plugin.annotations:collect(plugin.ui.annotation.annotations)
+local recolored_pending, recolored_fingerprints = plugin:unsentHighlights(DIGEST, recolored_highlights)
+check("a color-only change is not skipped as unchanged", #recolored_pending == 1,
+    "#pending = " .. #recolored_pending)
+check("the fingerprint moved even though the text and position did not",
+    recolored_fingerprints[recolored_highlights[1].external_id] ~= first_fingerprints[recolored_highlights[1].external_id],
+    dkjson.encode(recolored_fingerprints))
+
+plugin.ui.annotation.annotations[1].color = "yellow"
+
+step("14. Reaching the end finishes the book")
 plugin:onEndOfBook()
 check("the book reads as finished",
     plugin.document_state and plugin.document_state.book and plugin.document_state.book.status == "read",
     plugin.document_state and plugin.document_state.book and plugin.document_state.book.status)
 
-step("14. Syncing on a timer")
+step("15. Syncing on a timer")
 
 local ticks = {}
 local original_interval_push = plugin.pushNow
