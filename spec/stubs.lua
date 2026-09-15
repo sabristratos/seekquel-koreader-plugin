@@ -6,6 +6,7 @@ local recorder = {
     messages = {},
     dialogs = {},
     scheduled = {},
+    actions = {},
 }
 
 local function preload(name, module)
@@ -83,6 +84,16 @@ end
 preload("ui/widget/container/widgetcontainer", WidgetContainer)
 
 preload("device", { model = "HarnessReader" })
+
+preload("dispatcher", {
+    registerAction = function(_, name, value)
+        if recorder.actions[name] == nil then
+            recorder.actions[name] = value
+        end
+
+        return true
+    end,
+})
 
 preload("ui/network/manager", {
     isOnline = function() return true end,

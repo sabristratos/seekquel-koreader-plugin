@@ -4,6 +4,26 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-09-15
+
+### Added
+
+- **Seekquel actions can be put on a gesture.** Open KOReader's Gesture Manager and five
+  Seekquel actions are waiting there beside every other action it offers: sync now, sync
+  status, today's reading, resume from Seekquel, and setting the book's status. Assign
+  them to a tap, a swipe, a multiswipe or, on a reader with buttons, to a key. Setting
+  the status asks which of the four you mean when you assign it, so a single gesture can
+  mark a book finished without opening a menu.
+
+  A gesture fired with no book open, or on a file that is not linked to a book yet, says
+  so rather than doing nothing.
+
+### Changed
+
+- **Sync now ignores a second request that arrives on the heels of the first.** A gesture
+  is far easier to fire twice by accident than a menu item, and a second sync starting the
+  moment the first ended left the screen waiting twice over.
+
 ## [1.9.0] - 2026-09-15
 
 ### Added
