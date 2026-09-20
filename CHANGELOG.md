@@ -4,6 +4,14 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1] - 2026-09-20
+
+### Fixed
+
+- **Today's reading now says what it's showing you.** When the summary reflects the page
+  you're on right now rather than what was last saved, it says "As of your last page turn:"
+  instead of jumping straight to the numbers with no label at all.
+
 ## [1.10.0] - 2026-09-15
 
 ### Added

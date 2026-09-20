@@ -17,6 +17,8 @@ function Recap.reading(summary, state, synced)
     else
         if state == "cached" then
             table.insert(lines, _("Last saved today:"))
+        else
+            table.insert(lines, _("As of your last page turn:"))
         end
 
         local minutes = math.floor((tonumber(summary.seconds) or 0) / SECONDS_PER_MINUTE)
