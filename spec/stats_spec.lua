@@ -123,6 +123,50 @@ do
         hours[1] == 21 and hours[2] == 22, table.concat(hours, ","))
 end
 
+step("A day is also a share of the book, which a font change cannot bend")
+
+do
+    local days = Stats:new():daysFor(DIGEST, nil, 0)
+    local fraction = days[1].fraction or -1
+
+    check("forty pages of a 1,280-page file are a thirty-second of the book",
+        math.abs(fraction - (40 / 1280)) < 0.000001, fraction)
+end
+
+do
+    local path = os.tmpname()
+    local sql = table.concat({
+        "CREATE TABLE book (id integer PRIMARY KEY, md5 text);",
+        "CREATE TABLE page_stat_data (id_book integer, page integer, start_time integer, duration integer, total_pages integer);",
+        "INSERT INTO book (id, md5) VALUES (1, '" .. DIGEST .. "');",
+        "WITH RECURSIVE turn(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM turn WHERE n < 20)",
+        "INSERT INTO page_stat_data SELECT 1, n, CAST(strftime('%s', 'now', 'start of day', '+20 hours') AS INTEGER) + n * 60, 40, 800 FROM turn;",
+        "WITH RECURSIVE turn(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM turn WHERE n < 20)",
+        "INSERT INTO page_stat_data SELECT 1, 30 + n, CAST(strftime('%s', 'now', 'start of day', '+21 hours') AS INTEGER) + n * 60, 40, 1200 FROM turn;",
+    }, " ")
+
+    local pipe = io.popen("sqlite3 " .. path, "w")
+    pipe:write(sql)
+    pipe:close()
+
+    local stats = Stats:new()
+
+    stats.path = function()
+        return path
+    end
+
+    local days = stats:daysFor(DIGEST, nil, 0)
+    local fraction = days[1] and days[1].fraction or -1
+
+    check("twenty pages before a font change and twenty after count each at its own size",
+        math.abs(fraction - (20 / 800 + 20 / 1200)) < 0.000001, fraction)
+
+    check("while the page count alone still mixes the two numberings",
+        days[1] and days[1].pages == 40, days[1] and days[1].pages)
+
+    os.remove(path)
+end
+
 step("A window with nothing in it is a successful read, not a broken one")
 
 do

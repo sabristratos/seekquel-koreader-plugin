@@ -103,6 +103,10 @@ function Stats:query(digest, since_time, offset_minutes)
             self:attachHours(conn, byDate, book_id, floor, offset_minutes)
         end)
 
+        pcall(function()
+            self:attachFractions(conn, byDate, book_id, floor, offset_minutes)
+        end)
+
         conn:close()
 
         return { days = days, state = Stats.OK }
@@ -148,6 +152,35 @@ function Stats:attachHours(conn, byDate, book_id, floor, offset_minutes)
                 day.hours = day.hours or {}
                 day.hours[tostring(math.floor(hour))] = seconds
             end
+        end
+    end
+end
+
+function Stats:attachFractions(conn, byDate, book_id, floor, offset_minutes)
+    local sql = string.format([[
+        SELECT day, SUM(1.0 / total_pages) AS fraction
+        FROM (
+            SELECT DISTINCT date(start_time, 'unixepoch', %s) AS day, page, total_pages
+            FROM page_stat_data
+            WHERE id_book = %d AND start_time >= %d AND total_pages >= 1
+        )
+        GROUP BY day
+        ORDER BY day DESC
+        LIMIT %d;
+    ]], self:dayModifier(offset_minutes), tonumber(book_id), floor, MAX_DAYS)
+
+    local columns = conn:exec(sql)
+
+    if columns == nil then
+        return
+    end
+
+    for index = 1, #columns[1] do
+        local day = byDate[columns[1][index]]
+        local fraction = tonumber(columns[2][index])
+
+        if day ~= nil and fraction ~= nil then
+            day.fraction = math.max(0, math.min(1, fraction))
         end
     end
 end
