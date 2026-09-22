@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-09-22
+
+### Changed
+
+- **A reading day is now sent as a share of the book as well as a page count.** KOReader
+  counts pages at whatever font size a book is set to, so changing the size partway through
+  used to leave every day on either side of the change describing a different book. Each
+  page turn is now weighed against the page count the file had at that moment, and Seekquel
+  credits the day from that instead.
+
 ## [1.10.1] - 2026-09-20
 
 ### Fixed
