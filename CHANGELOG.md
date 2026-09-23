@@ -4,6 +4,24 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-09-23
+
+### Added
+
+- **A book you finish in Seekquel is marked finished in KOReader too.** When you mark a book
+  as read in the app, the next time you open it on your e-reader KOReader's own book status
+  changes to finished. It only happens when the change in Seekquel came after the last status
+  your e-reader sent, so a status you set on the e-reader since always stands, and a book you
+  are reading again is left alone.
+
+### Fixed
+
+- **Sync now shows and sends today's reading up to the page you're on.** KOReader only saves
+  its reading statistics every fifty page turns, when a book closes or when the reader
+  sleeps, so a sync in the middle of a sitting could leave out the last few dozen pages.
+  The add-on now asks KOReader to save them first, so Today's reading and the time sent to
+  Seekquel both match "As of your last page turn".
+
 ## [1.11.0] - 2026-09-22
 
 ### Changed

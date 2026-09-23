@@ -28,7 +28,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.11.0"
+local VERSION = "1.12.0"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -70,6 +70,8 @@ local KOREADER_STATUSES = {
 }
 
 local NO_STATUS = "none"
+
+local FINISHED_STATUS = KOREADER_STATUSES.complete
 
 local NOT_LINKED_TEXT = _("Nothing is sent for this book until you tell Seekquel which book it is.")
 
@@ -235,6 +237,8 @@ function Seekquel:scheduleOpeningSync(digest)
         self:whenOnline(function()
             self:reportDeviceIfDue()
             local state = self:loadDocument(digest)
+
+            self:applyFinishedStatus(digest, state)
 
             if self:offerResume(state, true) then
                 return
@@ -870,7 +874,74 @@ function Seekquel:sendStatusChange(digest)
     if state ~= nil then
         self.document_state = state
         self.settings:markStatus(digest, status)
+        self:recordStatusMark(digest, state)
     end
+end
+
+function Seekquel:statusChangedAt(state)
+    if type(state) ~= "table" or type(state.book) ~= "table" then
+        return nil
+    end
+
+    return tonumber(state.book.status_changed_at)
+end
+
+function Seekquel:recordStatusMark(digest, state)
+    local changed_at = self:statusChangedAt(state)
+
+    if changed_at ~= nil then
+        self.settings:setStatusMark(digest, changed_at)
+    end
+end
+
+function Seekquel:applyFinishedStatus(digest, state)
+    local changed_at = self:statusChangedAt(state)
+
+    if changed_at == nil or self.digest ~= digest then
+        return
+    end
+
+    local mark = self.settings:statusMark(digest)
+
+    if mark == nil then
+        self.settings:setStatusMark(digest, changed_at)
+
+        return
+    end
+
+    if changed_at <= mark or state.book.status ~= FINISHED_STATUS then
+        return
+    end
+
+    local device_status = self:documentStatus()
+
+    if device_status == nil or self.settings:lastStatus(digest) ~= device_status then
+        return
+    end
+
+    if device_status == FINISHED_STATUS then
+        self.settings:setStatusMark(digest, changed_at)
+
+        return
+    end
+
+    local status = self.ui and self.ui.status
+
+    if type(status) ~= "table" or type(status.markBook) ~= "function" then
+        return
+    end
+
+    local ok, result = pcall(status.markBook, status, true)
+
+    if not ok or self:documentStatus() ~= FINISHED_STATUS then
+        logger.warn("Seekquel: could not mark the book finished in KOReader", result)
+
+        return
+    end
+
+    self.settings:markStatus(digest, FINISHED_STATUS)
+    self.settings:setStatusMark(digest, changed_at)
+    self:notify(_("Marked as finished here, as it is in Seekquel."))
 end
 
 function Seekquel:allHighlights()
@@ -1103,7 +1174,21 @@ function Seekquel:buildHistoryFingerprint(days)
     return table.concat(parts, "|")
 end
 
+function Seekquel:flushStatistics()
+    local statistics = self.ui and self.ui.statistics
+
+    if type(statistics) == "table" and type(statistics.insertDB) == "function" then
+        local ok, result = pcall(statistics.insertDB, statistics)
+
+        if not ok then
+            logger.warn("Seekquel: could not save KOReader's reading statistics", result)
+        end
+    end
+end
+
 function Seekquel:readingDays(digest)
+    self:flushStatistics()
+
     local synced_at = self.settings:historySyncedAt(digest)
     local floor = synced_at and (synced_at - (HISTORY_OVERLAP_DAYS * SECONDS_PER_DAY)) or nil
 
@@ -2118,6 +2203,7 @@ function Seekquel:setStatus(status, label)
         end
 
         self.document_state = state
+        self:recordStatusMark(digest, state)
         self:notify(T(_("Marked as %1."), label))
     end)
 end
