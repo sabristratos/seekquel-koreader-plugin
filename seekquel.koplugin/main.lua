@@ -28,7 +28,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.12.0"
+local VERSION = "1.12.1"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -1613,6 +1613,7 @@ function Seekquel:installUpdate()
         UIManager:close(waiting)
 
         if not ok then
+            logger.warn("Seekquel: the update did not install:", reason)
             self:notify(self:updateFailureText(reason))
 
             return
@@ -1651,11 +1652,23 @@ function Seekquel:updateFailureText(reason)
         return _("This device will not let the add-on replace itself. Copy the new files across from a computer instead.")
     end
 
-    if reason == "corrupt" or reason == "incomplete" then
+    if reason == "corrupt" or reason == "incomplete" or reason == "unreadable_archive" then
         return _("The download did not arrive intact, so nothing was changed. Try again on a better connection.")
     end
 
-    return _("Could not reach Seekquel for the update. Nothing was changed.")
+    if reason == "download_failed" then
+        return _("The download stopped before it finished, so nothing was changed. Try again once Wi-Fi has settled.")
+    end
+
+    if reason == "no_path" then
+        return _("The add-on could not find its own folder, so nothing was changed. Copy the new files across from a computer instead.")
+    end
+
+    if reason == "bad_manifest" then
+        return _("Seekquel offered an update this add-on cannot install, so nothing was changed. Copy the new files across from a computer instead.")
+    end
+
+    return _("Could not reach Seekquel to check for the update. Nothing was changed. Make sure Wi-Fi is connected and try again.")
 end
 
 function Seekquel:syncStatusText()
