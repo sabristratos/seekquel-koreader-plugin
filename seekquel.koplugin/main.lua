@@ -28,12 +28,14 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.12.1"
+local VERSION = "1.13.0"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
 local PUSH_DEBOUNCE_SECONDS = 5
 local MANUAL_SYNC_REPEAT_SECONDS = 3
+local UPDATE_OFFER_DELAY_SECONDS = 3
+local UPDATE_REPORT_DELAY_SECONDS = 1
 local OPEN_DELAY_SECONDS = 3
 local RESUME_SETTLE_DELAY_SECONDS = 0.1
 local METADATA_DELAY_SECONDS = 20
@@ -52,6 +54,14 @@ local TIME_NONE = "none"
 local TIME_SENT = "sent"
 local TIME_REFUSED = "refused"
 local TIME_WAITING = "waiting"
+
+local UPDATE_INSTALLED = "installed"
+local UPDATE_DECLINED = "declined"
+local UPDATE_NO_PATH = "no_path"
+local UPDATE_TOO_OLD = "too_old"
+local UPDATE_NO_MANIFEST = "no_manifest"
+
+local READER_MODULE = "apps/reader/readerui"
 
 local SYNC_INTERVALS = { 0, 5, 15, 30, 60 }
 local APP_LINK_URL = "https://seekquel.app/links"
@@ -117,6 +127,12 @@ function Seekquel:init()
 
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
+
+    if not self:isReady() then
+        self:scheduleTask(UPDATE_OFFER_DELAY_SECONDS, function()
+            self:offerUpdate()
+        end)
+    end
 end
 
 function Seekquel:onReaderReady()
@@ -265,6 +281,10 @@ function Seekquel:scheduleDeviceReport()
     self:scheduleTask(PUSH_DEBOUNCE_SECONDS, function()
         self:whenOnline(function()
             self:reportDeviceIfDue()
+
+            if not self:readerIsOpen() then
+                self:offerUpdate()
+            end
         end)
     end)
 end
@@ -295,6 +315,11 @@ function Seekquel:diagnostics(slowest)
     local interruption = self.settings:lastInterruption()
     local synced_at, synced_ok = self.settings:lastSync()
     local reading_time, reading_time_recorded = self.settings:readingTime()
+    local update = self.settings:updateAttempt()
+
+    if type(update) ~= "table" then
+        update = {}
+    end
 
     return {
         interrupted_during = interruption and interruption.label or nil,
@@ -305,6 +330,10 @@ function Seekquel:diagnostics(slowest)
         last_sync_ok = synced_ok,
         reading_time = reading_time,
         reading_time_recorded = reading_time_recorded,
+        update_from = update.from,
+        update_to = update.to,
+        update_outcome = update.outcome,
+        update_at = update.at,
     }
 end
 
@@ -366,6 +395,68 @@ function Seekquel:updateAvailable()
     local latest = self.settings:latestVersion()
 
     return Updater.isNewer(latest, VERSION) and latest or nil
+end
+
+function Seekquel:readerIsOpen()
+    local reader = package.loaded[READER_MODULE]
+
+    return self:isReady() or (type(reader) == "table" and reader.instance ~= nil)
+end
+
+function Seekquel:offerableUpdate()
+    if self:readerIsOpen() or self.pairing_active then
+        return nil
+    end
+
+    if not self.api:isConfigured() or not NetworkMgr:isOnline() or self.settings:isUnreachable() then
+        return nil
+    end
+
+    if not Updater.canInstall() then
+        return nil
+    end
+
+    local latest = self:updateAvailable()
+
+    if latest == nil or self.settings:updateOffered() == latest then
+        return nil
+    end
+
+    return latest
+end
+
+function Seekquel:offerUpdate()
+    local latest = self:offerableUpdate()
+
+    if latest == nil then
+        return
+    end
+
+    self.settings:markUpdateOffered(latest)
+
+    UIManager:show(ConfirmBox:new({
+        text = T(_("Version %1 of the Seekquel add-on is ready. Update now?"), latest),
+        ok_text = _("Update now"),
+        ok_callback = function()
+            self:installUpdate()
+        end,
+        cancel_text = _("Later"),
+        cancel_callback = function()
+            self:recordUpdateAttempt(latest, UPDATE_DECLINED)
+        end,
+    }))
+end
+
+function Seekquel:recordUpdateAttempt(to, outcome)
+    self.settings:recordUpdateAttempt(VERSION, to, outcome)
+end
+
+function Seekquel:reportUpdateFailure()
+    self:scheduleTask(UPDATE_REPORT_DELAY_SECONDS, function()
+        if NetworkMgr:isOnline() and self.api:isConfigured() then
+            self:reportDevice()
+        end
+    end)
 end
 
 function Seekquel:applyRequestedSettings(answer)
@@ -1578,14 +1669,18 @@ function Seekquel:appendMenuItems(items, more)
 end
 
 function Seekquel:installUpdate()
+    local latest = self.settings:latestVersion()
+
     if self.path == nil then
+        self:recordUpdateAttempt(latest, UPDATE_NO_PATH)
         self:notify(_("This copy cannot update itself. Download the add-on from Seekquel instead."))
 
         return
     end
 
     if not Updater.canInstall() then
-        self:notify(self:updateFailureText("too_old"))
+        self:recordUpdateAttempt(latest, UPDATE_TOO_OLD)
+        self:notify(self:updateFailureText(UPDATE_TOO_OLD))
 
         return
     end
@@ -1604,9 +1699,11 @@ function Seekquel:installUpdate()
         self.api:clearBackoff()
 
         local manifest = self.api:pluginManifest()
-        local ok, reason = false, "no_manifest"
+        local target = latest
+        local ok, reason = false, UPDATE_NO_MANIFEST
 
         if type(manifest) == "table" and type(manifest.files) == "table" and type(manifest.version) == "string" then
+            target = manifest.version
             ok, reason = self.updater:install(self.path, manifest.files)
         end
 
@@ -1614,11 +1711,14 @@ function Seekquel:installUpdate()
 
         if not ok then
             logger.warn("Seekquel: the update did not install:", reason)
+            self:recordUpdateAttempt(target, reason)
             self:notify(self:updateFailureText(reason))
+            self:reportUpdateFailure()
 
             return
         end
 
+        self:recordUpdateAttempt(target, UPDATE_INSTALLED)
         self.settings:setPendingRestart(VERSION, manifest.version)
         self.settings:setLatestVersion(nil)
 
@@ -1640,7 +1740,7 @@ function Seekquel:installUpdate()
 end
 
 function Seekquel:updateFailureText(reason)
-    if reason == "too_old" then
+    if reason == UPDATE_TOO_OLD then
         return _("This version of KOReader cannot update the add-on by itself. Copy the new files across from a computer instead.")
     end
 
@@ -1660,7 +1760,7 @@ function Seekquel:updateFailureText(reason)
         return _("The download stopped before it finished, so nothing was changed. Try again once Wi-Fi has settled.")
     end
 
-    if reason == "no_path" then
+    if reason == UPDATE_NO_PATH then
         return _("The add-on could not find its own folder, so nothing was changed. Copy the new files across from a computer instead.")
     end
 

@@ -86,6 +86,8 @@ function Settings:disconnect()
     self:set("reading_time_recorded", nil)
     self:set("last_device_report_at", nil)
     self:set("reading_snapshot", nil)
+    self:set("update_offered", nil)
+    self:set("update_attempt", nil)
 
     for _index, key in ipairs(PER_BOOK_KEYS) do
         self:set(key, nil)
@@ -284,6 +286,22 @@ end
 
 function Settings:setPendingRestart(from, to)
     self:set("pending_restart", from and { from = from, to = to } or nil)
+end
+
+function Settings:updateOffered()
+    return self:get("update_offered")
+end
+
+function Settings:markUpdateOffered(version)
+    self:set("update_offered", version)
+end
+
+function Settings:updateAttempt()
+    return self:get("update_attempt")
+end
+
+function Settings:recordUpdateAttempt(from, to, outcome)
+    self:set("update_attempt", { from = from, to = to, outcome = outcome, at = os.time() })
 end
 
 function Settings:timezoneOffset()

@@ -28,12 +28,15 @@ You need a Seekquel account. The plugin is useless without one.
 You only do the copying above once. After that, when Seekquel is serving a newer version
 the Seekquel menu offers **Update the add-on**; tap it, and KOReader will ask you to
 restart. KOReader itself has no way to install or update an add-on, which is why this is
-built in rather than something the reader does for you.
+built in rather than something the reader does for you. The first time a new version is
+ready and you are in the file browser with Wi-Fi on, the add-on also asks once whether to
+update now; tap Later and it waits for the next version. It never asks while a book is open.
 
 It never updates on its own, and it only ever downloads from the server address this
 device is set to. The download is checked before anything is replaced, so a connection
 that drops part way leaves the copy you are running untouched. If your device will not let
 the add-on write to its own folder, it says so and you copy the files across as above.
+Whenever an update does not install, the add-on tells Seekquel what went wrong.
 
 ## What it sends
 
