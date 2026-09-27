@@ -346,4 +346,55 @@ do
         state == nil and recorded == nil, tostring(state) .. "/" .. tostring(recorded))
 end
 
+step("An update is offered once per version, and its outcome is kept for the next report")
+do
+    local settings = fresh()
+
+    check("nothing has been offered on a fresh device", settings:updateOffered() == nil,
+        tostring(settings:updateOffered()))
+
+    settings:markUpdateOffered("1.13.0")
+    check("an offer records the version it was for", settings:updateOffered() == "1.13.0",
+        tostring(settings:updateOffered()))
+
+    check("so a newer version is still a version never offered", settings:updateOffered() ~= "1.13.1",
+        tostring(settings:updateOffered()))
+end
+
+do
+    local settings = fresh()
+
+    check("no attempt is reported before there has been one", settings:updateAttempt() == nil,
+        "invented one")
+
+    settings:recordUpdateAttempt("1.13.0", "1.13.1", "download_failed")
+    local attempt = settings:updateAttempt()
+
+    check("an attempt keeps where it started, where it was going and how it ended",
+        attempt ~= nil and attempt.from == "1.13.0" and attempt.to == "1.13.1" and attempt.outcome == "download_failed",
+        attempt and attempt.outcome)
+
+    check("and when, which is what lets the server tell one attempt from the next",
+        math.abs(attempt.at - os.time()) <= 1, attempt.at)
+
+    settings:recordUpdateAttempt("1.13.0", "1.13.1", "installed")
+    check("a later attempt replaces it", settings:updateAttempt().outcome == "installed",
+        settings:updateAttempt().outcome)
+end
+
+do
+    local settings = fresh()
+
+    settings:setKey("ABCD1234ABCD1234")
+    settings:markUpdateOffered("1.13.0")
+    settings:recordUpdateAttempt("1.13.0", "1.13.1", "declined")
+    settings:disconnect()
+
+    check("disconnecting forgets the offer, so a re-paired device is asked again",
+        settings:updateOffered() == nil, tostring(settings:updateOffered()))
+
+    check("and the attempt, so a re-paired device does not report the old one",
+        settings:updateAttempt() == nil, "still stored")
+end
+
 harness.report()

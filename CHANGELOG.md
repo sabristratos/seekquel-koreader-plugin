@@ -4,6 +4,21 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-09-27
+
+### Added
+
+- **A new version is offered once.** When a newer add-on is ready and you are in the file
+  browser with Wi-Fi on, KOReader asks whether to update now. Tap Later and it stays quiet
+  until the next version; the Seekquel menu still offers the update whenever you want it.
+  It never asks while a book is open.
+
+### Changed
+
+- **An update that does not install tells Seekquel why.** The e-reader sends what went wrong
+  as soon as it happens, so a device left without a working add-on can be spotted and
+  helped rather than going quiet.
+
 ## [1.12.1] - 2026-09-25
 
 ### Fixed
