@@ -4,6 +4,14 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-10-08
+
+### Added
+
+- **Pair by scanning a QR code.** The pairing screen now shows a QR code above the code.
+  Scan it with your phone and Seekquel opens with the code already filled in, so all that is
+  left is to tap Connect. Typing the code still works as before.
+
 ## [1.13.0] - 2026-09-27
 
 ### Added
