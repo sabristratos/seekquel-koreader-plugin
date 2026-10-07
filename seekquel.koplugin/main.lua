@@ -17,6 +17,7 @@ local Annotations = require("seekquel_annotations")
 local Api = require("seekquel_api")
 local Chapters = require("seekquel_chapters")
 local Metadata = require("seekquel_metadata")
+local PairingDialog = require("seekquel_pairing")
 local Position = require("seekquel_position")
 local Recap = require("seekquel_recap")
 local Settings = require("seekquel_settings")
@@ -2088,22 +2089,20 @@ function Seekquel:showPairingCode(started)
 
     self.pairing_active = true
 
+    local link = type(started.verification_uri_complete) == "string" and started.verification_uri_complete or nil
+    local instructions = link
+        and _("Scan this with your phone's camera, or on your phone open Settings, Integrations, KOReader and enter the code below. Waiting for you to approve it.")
+        or _("On your phone, open Settings, Integrations, KOReader and enter the code below. Waiting for you to approve it.")
+
     local dialog
-    dialog = ButtonDialog:new({
-        title = T(
-            _("On your phone, open Settings, Integrations, KOReader and enter:\n\n%1\n\nWaiting for you to approve it."),
-            started.user_code
-        ),
-        title_align = "center",
-        buttons = {
-            { {
-                text = _("Cancel"),
-                callback = function()
-                    self.pairing_active = false
-                    UIManager:close(dialog)
-                end,
-            } },
-        },
+    dialog = PairingDialog:new({
+        instructions = instructions,
+        code = started.user_code,
+        link = link,
+        cancel_callback = function()
+            self.pairing_active = false
+            UIManager:close(dialog)
+        end,
     })
 
     UIManager:show(dialog)

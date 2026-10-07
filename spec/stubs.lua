@@ -41,6 +41,7 @@ preload("ui/widget/confirmbox", widget("ConfirmBox"))
 preload("ui/widget/inputdialog", widget("InputDialog"))
 preload("ui/widget/buttondialog", widget("ButtonDialog"))
 preload("ui/widget/qrmessage", widget("QRMessage"))
+preload("seekquel_pairing", widget("PairingDialog"))
 
 preload("ui/event", {
     new = function(_, name, value)
