@@ -179,4 +179,48 @@ function Chapters:at(percent)
     return position
 end
 
+function Chapters:span(position)
+    if self.marks == nil or position == nil or self.marks[position] == nil then
+        return nil, nil
+    end
+
+    return self.marks[position], self.marks[position + 1] or 1
+end
+
+function Chapters:progression(percent)
+    local reached = tonumber(percent)
+    local first, last = self:span(self:at(reached))
+
+    if first == nil then
+        return nil
+    end
+
+    if last <= first then
+        return 0
+    end
+
+    return math.max(0, math.min(1, (reached - first) / (last - first)))
+end
+
+function Chapters:destination(resume)
+    if type(resume) ~= "table" then
+        return nil
+    end
+
+    local position = tonumber(resume.to_chapter)
+    local share = tonumber(resume.to_chapter_progression)
+
+    if position == nil or share == nil or share < 0 or share > 1 or tonumber(resume.chapter_list_size) ~= self:count() then
+        return nil
+    end
+
+    local first, last = self:span(math.floor(position))
+
+    if first == nil then
+        return nil
+    end
+
+    return first + ((last - first) * share)
+end
+
 return Chapters

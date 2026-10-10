@@ -4,6 +4,23 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-10-10
+
+### Changed
+
+- **Continuing from Seekquel lands in the right place in the chapter.** When you accept
+  "Continue there" for a place you reached in the Seekquel app, KOReader now opens the same
+  point in that chapter instead of a percentage of the whole book, which the two apps measure
+  differently and could land pages away. This works when your file lists the same chapters as
+  the one you read in the app; otherwise the percentage is used as before.
+- **Seekquel learns how far into the chapter you are.** Each sync now says how far through
+  the current chapter you have read, so the Seekquel app can open the same point in it.
+
+### Fixed
+
+- **The offer to continue from Seekquel showed two percent signs** ("60%%"). It now reads
+  "60%".
+
 ## [1.14.0] - 2026-10-08
 
 ### Added

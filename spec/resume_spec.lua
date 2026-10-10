@@ -59,6 +59,8 @@ check("the choice is shown before anything moves or syncs",
     current_percent == 0.25 and pushes == 0, current_percent)
 check("the choice explains that the file gets the closest place",
     dialog.text:find("closest place", 1, true) ~= nil, dialog.text)
+check("the percentage reads as one percent sign",
+    dialog.text:find("at 40%.", 1, true) ~= nil and dialog.text:find("%%", 1, true) == nil, dialog.text)
 
 dialog.ok_callback()
 
@@ -87,5 +89,50 @@ check("that target stays quiet", plugin:offerResume({ resume = { from_percentage
     "offered")
 check("a later target can be offered", plugin:offerResume({ resume = { from_percentage = 0.25, to_percentage = 0.6 } }, true) == true,
     "not offered")
+
+step("A place another app gave by chapter opens the same share of that chapter")
+
+plugin.settings:setDismissedResume("digest", nil)
+plugin.chapters:load({
+    document = {
+        getPageCount = function() return 100 end,
+        getToc = function()
+            return {
+                { title = "Cover", page = 1, depth = 1 },
+                { title = "Chapter One", page = 11, depth = 1 },
+                { title = "Chapter Two", page = 51, depth = 1 },
+                { title = "Chapter Three", page = 91, depth = 1 },
+            }
+        end,
+    },
+})
+current_percent = 0.25
+current_progress = "place-25"
+plugin.position:settle(current_progress, current_percent)
+events = {}
+
+local by_chapter = { resume = { from_percentage = 0.25, to_percentage = 0.55, to_chapter = 3, to_chapter_progression = 0.25, chapter_list_size = 4 } }
+
+check("the offer is made", plugin:offerResume(by_chapter, true) == true, "not offered")
+check("the offer says where in the chapter it moves",
+    recorder.dialogs[#recorder.dialogs].text:find("same place in that chapter", 1, true) ~= nil,
+    recorder.dialogs[#recorder.dialogs].text)
+
+recorder.dialogs[#recorder.dialogs].ok_callback()
+
+check("KOReader moves inside the chapter rather than to the other app's percentage",
+    events[1] and events[1].name == "GotoPercent" and math.abs(events[1].value - 60) < 1e-9,
+    events[1] and events[1].value)
+
+step("A chapter place this file has already passed is not offered")
+
+current_percent = 0.7
+current_progress = "place-70"
+plugin.position:settle(current_progress, current_percent)
+plugin.settings:setDismissedResume("digest", nil)
+
+check("no offer to move back",
+    plugin:offerResume({ resume = { from_percentage = 0.7, to_percentage = 0.75, to_chapter = 3, to_chapter_progression = 0.25, chapter_list_size = 4 } }, true) == false,
+    "offered")
 
 harness.report()

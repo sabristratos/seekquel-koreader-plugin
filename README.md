@@ -97,8 +97,10 @@ Open a linked book while online and the add-on checks whether Seekquel has a lat
 for it. This includes progress you logged from a hardcover, an audiobook, another edition
 or another app. KOReader asks before moving and leaves the book where it is if you say no.
 
-The match is by percentage. A printed page and an EPUB location do not line up exactly,
-so KOReader moves to the closest place in this file. You can ask again at any time from
+When the place came from the Seekquel app and your file lists the same chapters, KOReader
+moves to the same point in that chapter. Otherwise the match is by percentage: a printed
+page and an EPUB location do not line up exactly, so KOReader moves to the closest place in
+this file. You can ask again at any time from
 **Tools > Seekquel > Resume from Seekquel**.
 
 Moving to that place does not add pages or reading time. If you keep the KOReader place,

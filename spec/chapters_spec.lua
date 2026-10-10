@@ -142,4 +142,35 @@ do
         late:at(-0.5) == 1, late:at(-0.5))
 end
 
+step("A place inside a chapter is a share of that chapter")
+
+do
+    local chapters = loaded(100, NOVEL)
+
+    check("the start of a chapter is none of it",
+        chapters:progression(0.50) == 0, chapters:progression(0.50))
+    check("a quarter of the way through the second chapter",
+        math.abs(chapters:progression(0.60) - 0.25) < 1e-9, chapters:progression(0.60))
+    check("the last entry runs to the end of the book",
+        math.abs(chapters:progression(0.95) - 0.5) < 1e-9, chapters:progression(0.95))
+    check("a file with no contents has no share to report",
+        Chapters:new():progression(0.5) == nil, "reported")
+end
+
+step("Another app's place opens the same share of the same chapter")
+
+do
+    local chapters = loaded(100, NOVEL)
+    local resume = { to_chapter = 3, to_chapter_progression = 0.25, chapter_list_size = 4 }
+
+    check("a list of the same length places the share inside the chapter",
+        math.abs(chapters:destination(resume) - 0.6) < 1e-9, chapters:destination(resume))
+    check("a list of another length is not trusted",
+        chapters:destination({ to_chapter = 3, to_chapter_progression = 0.25, chapter_list_size = 5 }) == nil, "placed")
+    check("an offer with no chapter falls back to its percentage",
+        chapters:destination({ to_percentage = 0.4 }) == nil, "placed")
+    check("a chapter this file does not have is not placed",
+        chapters:destination({ to_chapter = 9, to_chapter_progression = 0.5, chapter_list_size = 4 }) == nil, "placed")
+end
+
 harness.report()
