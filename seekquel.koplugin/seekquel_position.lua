@@ -160,6 +160,12 @@ function Position:resumeTarget(resume, dismissed)
     return target
 end
 
+function Position:reachedPast(fraction)
+    local reached = self.anchor and tonumber(self.anchor.percent) or nil
+
+    return reached ~= nil and reached >= fraction - RESUME_TOLERANCE
+end
+
 function Position:commit()
     self.covered = 0
 end

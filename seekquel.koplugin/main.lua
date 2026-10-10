@@ -29,7 +29,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.14.0"
+local VERSION = "1.15.0"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -529,10 +529,16 @@ function Seekquel:offerResume(state, automatic)
         return false
     end
 
-    local percentage = math.floor((target * 100) + 0.5)
+    self:ensureChapters()
+
+    local destination = self.chapters:destination(state.resume)
+
+    if destination ~= nil and self.position:reachedPast(destination) then
+        return false
+    end
 
     UIManager:show(ConfirmBox:new({
-        text = T(_("Seekquel has this book at %1%%. KOReader will move to the closest place in this file."), tostring(percentage)),
+        text = self:resumeText(target, destination),
         ok_text = _("Continue there"),
         ok_callback = function()
             if self.digest ~= digest then
@@ -540,7 +546,7 @@ function Seekquel:offerResume(state, automatic)
             end
 
             self.settings:setDismissedResume(digest, nil)
-            self:goToResume(target)
+            self:goToResume(destination or target)
         end,
         cancel_text = _("Keep this place"),
         cancel_callback = function()
@@ -554,6 +560,16 @@ function Seekquel:offerResume(state, automatic)
     }))
 
     return true
+end
+
+function Seekquel:resumeText(target, destination)
+    local percentage = tostring(math.floor((target * 100) + 0.5))
+
+    if destination ~= nil then
+        return T(_("Seekquel has this book at %1%. KOReader will move to the same place in that chapter of this file."), percentage)
+    end
+
+    return T(_("Seekquel has this book at %1%. KOReader will move to the closest place in this file."), percentage)
 end
 
 function Seekquel:goToResume(target)
@@ -667,7 +683,8 @@ function Seekquel:sendProgress(timeout)
         self:metadata(),
         timeout,
         self.chapters:at(percentage),
-        self.chapters:count()
+        self.chapters:count(),
+        self.chapters:progression(percentage)
     ) ~= nil
 
     if sent then
