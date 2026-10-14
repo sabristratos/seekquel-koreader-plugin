@@ -187,4 +187,53 @@ do
     check("both gestures ran", runs == 2, runs)
 end
 
+step("A sync of a file the catalogue has not placed says so instead of claiming success")
+
+do
+    local plugin = build(true, false)
+
+    plugin.document_state = { book = nil }
+    plugin.pushNow = function(_self, _asked_for, _leaving, _continuing, _prepared, completed)
+        completed(true)
+    end
+
+    plugin:onSeekquelSyncNow()
+
+    local message = lastMessage()
+
+    check("it does not report a completed sync", message ~= nil and not message:find("Sync complete", 1, true), message)
+    check("it asks which book this is", message ~= nil and message:find("which book it is", 1, true) ~= nil, message)
+end
+
+step("A sync whose book lookup never answered does not call the book unlinked")
+
+do
+    local plugin = build(true, false)
+
+    plugin.pushNow = function(_self, _asked_for, _leaving, _continuing, _prepared, completed)
+        completed(false)
+    end
+
+    plugin:onSeekquelSyncNow()
+
+    local message = lastMessage()
+
+    check("it does not ask which book this is", message ~= nil and message:find("which book it is", 1, true) == nil, message)
+    check("it says reading is still waiting", message == "Some reading is still waiting to sync.", message)
+end
+
+step("A sync of a linked book still reports success")
+
+do
+    local plugin = build(true, true)
+
+    plugin.pushNow = function(_self, _asked_for, _leaving, _continuing, _prepared, completed)
+        completed(true)
+    end
+
+    plugin:onSeekquelSyncNow()
+
+    check("it reports a completed sync", lastMessage() == "Sync complete.", lastMessage())
+end
+
 harness.report()
