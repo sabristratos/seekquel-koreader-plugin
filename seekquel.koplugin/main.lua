@@ -29,7 +29,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.15.0"
+local VERSION = "1.15.1"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -85,6 +85,7 @@ local NO_STATUS = "none"
 local FINISHED_STATUS = KOREADER_STATUSES.complete
 
 local NOT_LINKED_TEXT = _("Nothing is sent for this book until you tell Seekquel which book it is.")
+local STILL_WAITING_TEXT = _("Some reading is still waiting to sync.")
 
 local RATINGS = { 1, 2, 3, 4, 5 }
 
@@ -1113,12 +1114,14 @@ function Seekquel:syncNow()
     self:pushNow(true, false, false, nil, function(synced)
         self.manual_sync_at = os.time()
 
-        if self.settings:isEnabled("show_reading_summary", true) then
+        if not self:isLinked() then
+            self:notify(self.document_state ~= nil and NOT_LINKED_TEXT or STILL_WAITING_TEXT)
+        elseif self.settings:isEnabled("show_reading_summary", true) then
             self:showReadingSummary(synced)
         elseif synced then
             self:notify(_("Sync complete."))
         else
-            self:notify(_("Some reading is still waiting to sync."))
+            self:notify(STILL_WAITING_TEXT)
         end
     end)
 end

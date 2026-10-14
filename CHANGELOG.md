@@ -4,6 +4,15 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.1] - 2026-10-14
+
+### Fixed
+
+- **Sync now no longer says "Sync complete" for a book Seekquel has not matched yet.** If
+  the book you are reading is not linked to a Seekquel book, Sync now tells you to choose
+  which book it is, because nothing is sent until you do. If Seekquel could not be reached to
+  look the book up, it says your reading is still waiting to sync instead.
+
 ## [1.15.0] - 2026-10-10
 
 ### Changed
