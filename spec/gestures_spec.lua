@@ -236,4 +236,42 @@ do
     check("it reports a completed sync", lastMessage() == "Sync complete.", lastMessage())
 end
 
+step("A book put on hold in KOReader is paused in Seekquel")
+
+do
+    local plugin = build(true, true)
+    local sent = {}
+
+    plugin.ui.doc_settings = {
+        readSetting = function(_self, key)
+            if key == "summary" then
+                return { status = "abandoned" }
+            end
+        end,
+    }
+    plugin.hasBudget = function()
+        return true
+    end
+    plugin.recordStatusMark = function() end
+    plugin.api.setStatus = function(_self, _digest, status)
+        table.insert(sent, status)
+
+        return { book = { status = status } }
+    end
+
+    check("on hold reads as paused", plugin:documentStatus() == "paused", plugin:documentStatus())
+
+    plugin.settings:markStatus(DIGEST, "reading")
+    plugin:sendStatusChange(DIGEST)
+
+    check("putting it on hold sends paused", sent[1] == "paused", sent[1])
+
+    sent = {}
+    plugin.settings:markStatus(DIGEST, "did_not_finish")
+    plugin:sendStatusChange(DIGEST)
+
+    check("a book already on hold before the update sends nothing", #sent == 0, #sent)
+    check("and is remembered as paused from now on", plugin.settings:lastStatus(DIGEST) == "paused", plugin.settings:lastStatus(DIGEST))
+end
+
 harness.report()

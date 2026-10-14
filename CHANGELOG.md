@@ -4,6 +4,15 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0] - 2026-10-14
+
+### Fixed
+
+- **Putting a book on hold in KOReader now pauses it in Seekquel instead of marking it
+  Did not finish.** Picking it up again carries on with the same read, so your place and
+  the time you have already spent on it stay together. Books you put on hold before this
+  update are left as they are until you change their status again.
+
 ## [1.15.1] - 2026-10-14
 
 ### Fixed

@@ -128,7 +128,7 @@ Everything is under **Tools > Seekquel > Settings**.
 
 - Send reading time, send highlights, and mark finished at the end are all on by default.
 - **Send status changes from this device** mirrors the status you set in KOReader's own
-  screens: Finished becomes Read, On hold becomes Did not finish. It only sends a change
+  screens: Finished becomes Read, On hold becomes Paused. It only sends a change
   you make on the device, so a status you set in the app is never overwritten. Setting it
   from the file browser while the book is closed reaches Seekquel the next time you open
   and sync that book.

@@ -29,7 +29,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.15.1"
+local VERSION = "1.16.0"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -76,13 +76,17 @@ local STATUSES = {
 
 local KOREADER_STATUSES = {
     complete = "read",
-    abandoned = "did_not_finish",
+    abandoned = "paused",
     reading = "reading",
 }
 
 local NO_STATUS = "none"
 
 local FINISHED_STATUS = KOREADER_STATUSES.complete
+
+local ON_HOLD_STATUS = KOREADER_STATUSES.abandoned
+
+local ON_HOLD_STATUS_BEFORE_1_16 = "did_not_finish"
 
 local NOT_LINKED_TEXT = _("Nothing is sent for this book until you tell Seekquel which book it is.")
 local STILL_WAITING_TEXT = _("Some reading is still waiting to sync.")
@@ -973,7 +977,7 @@ function Seekquel:sendStatusChange(digest)
         return
     end
 
-    if seen == nil then
+    if seen == nil or (seen == ON_HOLD_STATUS_BEFORE_1_16 and status == ON_HOLD_STATUS) then
         self.settings:markStatus(digest, status)
 
         return
