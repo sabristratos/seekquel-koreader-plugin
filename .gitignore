@@ -9,3 +9,4 @@ emulator/state/
 
 # Written by the harness while it waits for a pairing to be approved
 spec/.pairing-code
+CLAUDE.md
