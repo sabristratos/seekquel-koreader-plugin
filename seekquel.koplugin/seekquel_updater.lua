@@ -19,6 +19,7 @@ local SAFE_NAME = "^[%w%._%-/]+$"
 local RELEASE_VERSION = "^%d+%.%d+%.%d+$"
 local MAX_VERSION_LENGTH = 32
 local ENTRY_POINT = "main.lua"
+local VERSION_DECLARATION = 'local VERSION = "([^"\n]*)"'
 
 function Updater:new(api)
     return setmetatable({ api = api }, self)
@@ -74,7 +75,7 @@ function Updater.canInstall()
     return Archiver ~= nil
 end
 
-function Updater:install(path, files)
+function Updater:install(path, files, version)
     if not Updater.canInstall() then
         logger.warn("Seekquel: this KOReader cannot unpack an update, so the add-on cannot replace itself")
 
@@ -89,7 +90,7 @@ function Updater:install(path, files)
         return false, "no_manifest"
     end
 
-    if files[ENTRY_POINT] == nil then
+    if type(version) ~= "string" or files[ENTRY_POINT] == nil then
         return false, "bad_manifest"
     end
 
@@ -102,7 +103,7 @@ function Updater:install(path, files)
     local staging = path .. STAGING_SUFFIX
     local archive = path .. DOWNLOAD_SUFFIX
 
-    local ok, reason = self:stage(staging, archive, files)
+    local ok, reason = self:stage(staging, archive, files, version)
 
     os.remove(archive)
 
@@ -115,7 +116,7 @@ function Updater:install(path, files)
     return self:swap(path, staging)
 end
 
-function Updater:stage(staging, archive, files)
+function Updater:stage(staging, archive, files, version)
     ffiUtil.purgeDir(staging)
 
     if not util.makePath(staging) then
@@ -130,7 +131,7 @@ function Updater:stage(staging, archive, files)
         return false, "unreadable_archive"
     end
 
-    return self:verify(staging, files)
+    return self:verify(staging, files, version)
 end
 
 function Updater:extract(archive, staging, files)
@@ -166,7 +167,7 @@ function Updater:extract(archive, staging, files)
     return extracted > 0
 end
 
-function Updater:verify(staging, files)
+function Updater:verify(staging, files, version)
     for name, expected in pairs(files) do
         local handle = io.open(staging .. "/" .. name, "rb")
 
@@ -184,6 +185,25 @@ function Updater:verify(staging, files)
 
             return false, "corrupt"
         end
+    end
+
+    return self:matchesVersion(staging, version)
+end
+
+function Updater:matchesVersion(staging, version)
+    local handle = io.open(staging .. "/" .. ENTRY_POINT, "rb")
+
+    if handle == nil then
+        return false, "incomplete"
+    end
+
+    local bytes = handle:read("*a")
+    handle:close()
+
+    if bytes == nil or bytes:match(VERSION_DECLARATION) ~= version then
+        logger.warn("Seekquel: the download is not the version it was offered as", version)
+
+        return false, "bad_manifest"
     end
 
     return true

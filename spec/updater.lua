@@ -124,7 +124,7 @@ step("a good download replaces the add-on")
 local live = freshInstall("live")
 write(live .. "/dropped.lua", "a file the new version does not have")
 
-local ok, reason = updater:install(live, manifest())
+local ok, reason = updater:install(live, manifest(), "9.9.9")
 
 check("it reports success", ok, reason)
 check("every file is the new one", read(live .. "/main.lua") == BODIES["main.lua"])
@@ -138,7 +138,7 @@ check("no download is left behind", lfs.attributes(live .. ".sq-download") == ni
 
 step("a download that does not match the manifest changes nothing")
 local corrupt = freshInstall("corrupt")
-local ok2, reason2 = updater:install(corrupt, { ["main.lua"] = sha256("something else") })
+local ok2, reason2 = updater:install(corrupt, { ["main.lua"] = sha256("something else") }, "9.9.9")
 
 check("it reports failure", not ok2)
 check("it says the download was corrupt", reason2 == "corrupt", reason2)
@@ -149,7 +149,7 @@ step("a manifest naming a file the download lacks changes nothing")
 local short = freshInstall("short")
 local expected = manifest()
 expected["absent.lua"] = sha256("x")
-local ok3, reason3 = updater:install(short, expected)
+local ok3, reason3 = updater:install(short, expected, "9.9.9")
 
 check("it reports failure", not ok3)
 check("it says the download was incomplete", reason3 == "incomplete", reason3)
@@ -157,16 +157,31 @@ check("the running copy is untouched", read(short .. "/main.lua") == "the copy t
 
 step("a hostile manifest is refused before anything is downloaded")
 local hostile = freshInstall("hostile")
-local ok4, reason4 = updater:install(hostile, { ["../../../etc/passwd"] = sha256("x") })
+local ok4, reason4 = updater:install(hostile, { ["../../../etc/passwd"] = sha256("x") }, "9.9.9")
 
 check("it reports failure", not ok4)
 check("it says the manifest was bad", reason4 == "bad_manifest", reason4)
 check("the running copy is untouched", read(hostile .. "/main.lua") == "the copy that is already running")
 
+step("an update that is not the version it was offered as changes nothing")
+local replay = freshInstall("replay")
+local ok7, reason7 = updater:install(replay, manifest(), "9.9.10")
+
+check("it reports failure", not ok7)
+check("it says the manifest was bad", reason7 == "bad_manifest", reason7)
+check("the running copy is untouched", read(replay .. "/main.lua") == "the copy that is already running")
+check("nothing is left staged", lfs.attributes(replay .. ".sq-staging") == nil)
+
+local unversioned = freshInstall("unversioned")
+local ok8, reason8 = updater:install(unversioned, manifest())
+
+check("an install with no offered version is refused", not ok8 and reason8 == "bad_manifest", reason8)
+check("and leaves the running copy alone", read(unversioned .. "/main.lua") == "the copy that is already running")
+
 step("a manifest without main.lua is refused, since the add-on could not load")
 local headless = freshInstall("headless")
 write(headless .. "/_meta.lua", "the metadata that is already running")
-local ok6, reason6 = updater:install(headless, { ["nested/deep.lua"] = sha256(BODIES["nested/deep.lua"]) })
+local ok6, reason6 = updater:install(headless, { ["nested/deep.lua"] = sha256(BODIES["nested/deep.lua"]) }, "9.9.9")
 
 check("it reports failure", not ok6)
 check("it says the manifest was bad", reason6 == "bad_manifest", reason6)
@@ -196,7 +211,7 @@ os.rename = function(from, to)
     return nil
 end
 
-local ok5, reason5 = blocked:install(stranded, manifest())
+local ok5, reason5 = blocked:install(stranded, manifest(), "9.9.9")
 os.rename = realRename
 
 check("it reports failure", not ok5)

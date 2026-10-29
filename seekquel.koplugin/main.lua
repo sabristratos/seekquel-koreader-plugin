@@ -1732,7 +1732,7 @@ function Seekquel:installUpdate()
             target = manifest.version
 
             if Updater.isNewer(target, VERSION) then
-                ok, reason = self.updater:install(self.path, manifest.files)
+                ok, reason = self.updater:install(self.path, manifest.files, target)
             else
                 ok, reason = false, "bad_manifest"
             end
