@@ -115,14 +115,14 @@ function Updater:stage(staging, archive, files)
         return false, "download_failed"
     end
 
-    if not self:extract(archive, staging) then
+    if not self:extract(archive, staging, files) then
         return false, "unreadable_archive"
     end
 
     return self:verify(staging, files)
 end
 
-function Updater:extract(archive, staging)
+function Updater:extract(archive, staging, files)
     local reader = Archiver.Reader:new()
 
     if not reader:open(archive) then
@@ -134,7 +134,7 @@ function Updater:extract(archive, staging)
     for entry in reader:iterate() do
         local name = entry.path:sub(#PLUGIN_PREFIX + 1)
 
-        if entry.mode == "file" and entry.path:sub(1, #PLUGIN_PREFIX) == PLUGIN_PREFIX and self.isSafeName(name) then
+        if entry.mode == "file" and entry.path:sub(1, #PLUGIN_PREFIX) == PLUGIN_PREFIX and self.isSafeName(name) and files[name] ~= nil then
             local destination = staging .. "/" .. name
 
             util.makePath(destination:match("^(.*)/[^/]+$") or staging)

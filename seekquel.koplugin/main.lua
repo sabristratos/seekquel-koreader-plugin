@@ -49,6 +49,7 @@ local SEARCH_MIN_LENGTH = 2
 local APP_QR_SIZE = 400
 local CLIENT_ERROR_FLOOR = 400
 local SERVER_ERROR_FLOOR = 500
+local RETRYABLE_CLIENT_ERRORS = { [408] = true, [425] = true, [429] = true }
 
 local TIME_DISABLED = "disabled"
 local TIME_NONE = "none"
@@ -872,7 +873,7 @@ function Seekquel:pushNow(asked_for, leaving, continuing, prepared, completed)
             local answer, status = self.api:pushSessions(digest, days, timeout)
 
             if type(answer) ~= "table" then
-                if status ~= nil and status >= CLIENT_ERROR_FLOOR and status < SERVER_ERROR_FLOOR then
+                if status ~= nil and status >= CLIENT_ERROR_FLOOR and status < SERVER_ERROR_FLOOR and not RETRYABLE_CLIENT_ERRORS[status] then
                     self.settings:markHistoryRefused(digest, history)
                 end
 
@@ -1729,7 +1730,12 @@ function Seekquel:installUpdate()
 
         if type(manifest) == "table" and type(manifest.files) == "table" and type(manifest.version) == "string" then
             target = manifest.version
-            ok, reason = self.updater:install(self.path, manifest.files)
+
+            if Updater.isNewer(target, VERSION) then
+                ok, reason = self.updater:install(self.path, manifest.files)
+            else
+                ok, reason = false, "bad_manifest"
+            end
         end
 
         UIManager:close(waiting)

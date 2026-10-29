@@ -56,6 +56,7 @@ local function buildArchive(path)
         writer:addFileFromMemory("seekquel.koplugin/" .. name, body)
     end
 
+    writer:addFileFromMemory("seekquel.koplugin/unlisted.lua", "return 'not in the manifest'")
     writer:addFileFromMemory("LICENSE", "not inside the plugin directory")
     writer:addFileFromMemory("README.md", "also not")
     writer:close()
@@ -122,6 +123,7 @@ check("every file is the new one", read(live .. "/main.lua") == BODIES["main.lua
 check("a nested file arrives", read(live .. "/nested/deep.lua") == BODIES["nested/deep.lua"])
 check("a file the new version drops is gone", read(live .. "/dropped.lua") == nil)
 check("nothing outside the add-on directory is written", read(live .. "/LICENSE") == nil)
+check("a file the manifest does not list is not installed", read(live .. "/unlisted.lua") == nil)
 check("no staging directory is left behind", lfs.attributes(live .. ".sq-staging") == nil)
 check("no previous directory is left behind", lfs.attributes(live .. ".sq-previous") == nil)
 check("no download is left behind", lfs.attributes(live .. ".sq-download") == nil)
