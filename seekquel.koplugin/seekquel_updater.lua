@@ -18,6 +18,7 @@ local DOWNLOAD_SUFFIX = ".sq-download"
 local SAFE_NAME = "^[%w%._%-/]+$"
 local RELEASE_VERSION = "^%d+%.%d+%.%d+$"
 local MAX_VERSION_LENGTH = 32
+local ENTRY_POINT = "main.lua"
 
 function Updater:new(api)
     return setmetatable({ api = api }, self)
@@ -86,6 +87,10 @@ function Updater:install(path, files)
 
     if type(files) ~= "table" or next(files) == nil then
         return false, "no_manifest"
+    end
+
+    if files[ENTRY_POINT] == nil then
+        return false, "bad_manifest"
     end
 
     for name in pairs(files) do

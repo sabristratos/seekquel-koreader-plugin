@@ -163,6 +163,17 @@ check("it reports failure", not ok4)
 check("it says the manifest was bad", reason4 == "bad_manifest", reason4)
 check("the running copy is untouched", read(hostile .. "/main.lua") == "the copy that is already running")
 
+step("a manifest without main.lua is refused, since the add-on could not load")
+local headless = freshInstall("headless")
+write(headless .. "/_meta.lua", "the metadata that is already running")
+local ok6, reason6 = updater:install(headless, { ["nested/deep.lua"] = sha256(BODIES["nested/deep.lua"]) })
+
+check("it reports failure", not ok6)
+check("it says the manifest was bad", reason6 == "bad_manifest", reason6)
+check("main.lua is still there", read(headless .. "/main.lua") == "the copy that is already running")
+check("the other files are still there", read(headless .. "/_meta.lua") == "the metadata that is already running")
+check("nothing is left staged", lfs.attributes(headless .. ".sq-staging") == nil)
+
 step("a swap that cannot be completed says the add-on is stranded")
 local stranded = freshInstall("stranded")
 local blocked = Updater:new({
