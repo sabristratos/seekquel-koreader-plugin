@@ -118,6 +118,9 @@ check("an absolute path is refused", not Updater.isSafeName("/etc/passwd"))
 check("traversal in the middle is refused", not Updater.isSafeName("a/../../b"))
 check("an empty name is refused", not Updater.isSafeName(""))
 check("a name that is not a string is refused", not Updater.isSafeName(nil))
+check("a current directory segment is refused", not Updater.isSafeName("./main.lua") and not Updater.isSafeName("a/./b.lua"))
+check("an empty segment is refused", not Updater.isSafeName("a//b.lua"))
+check("a directory is refused", not Updater.isSafeName("nested/"))
 check("a shell character is refused", not Updater.isSafeName("main.lua; rm -rf /"))
 
 step("a good download replaces the add-on")
@@ -162,6 +165,17 @@ local ok4, reason4 = updater:install(hostile, { ["../../../etc/passwd"] = sha256
 check("it reports failure", not ok4)
 check("it says the manifest was bad", reason4 == "bad_manifest", reason4)
 check("the running copy is untouched", read(hostile .. "/main.lua") == "the copy that is already running")
+
+step("a manifest naming two files that differ only by case is refused")
+local folded = freshInstall("folded")
+local ok9, reason9 = updater:install(folded, {
+    ["main.lua"] = sha256(BODIES["main.lua"]),
+    ["Main.lua"] = sha256(BODIES["main.lua"]),
+}, "9.9.9")
+
+check("it reports failure", not ok9)
+check("it says the manifest was bad", reason9 == "bad_manifest", reason9)
+check("the running copy is untouched", read(folded .. "/main.lua") == "the copy that is already running")
 
 step("an update that is not the version it was offered as changes nothing")
 local replay = freshInstall("replay")

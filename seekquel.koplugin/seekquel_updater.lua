@@ -69,6 +69,9 @@ function Updater.isSafeName(name)
         and name:match(SAFE_NAME) ~= nil
         and not name:find("%.%.")
         and name:sub(1, 1) ~= "/"
+        and name:sub(-1) ~= "/"
+        and not name:find("//", 1, true)
+        and ("/" .. name .. "/"):find("/%./") == nil
 end
 
 function Updater.canInstall()
@@ -94,10 +97,14 @@ function Updater:install(path, files, version)
         return false, "bad_manifest"
     end
 
+    local folded = {}
+
     for name in pairs(files) do
-        if not self.isSafeName(name) then
+        if not self.isSafeName(name) or folded[name:lower()] then
             return false, "bad_manifest"
         end
+
+        folded[name:lower()] = true
     end
 
     local staging = path .. STAGING_SUFFIX
