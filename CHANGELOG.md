@@ -4,6 +4,17 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Reading time is no longer held back after a temporary refusal.** A timeout or a
+  rate-limit answer from Seekquel used to stop that day's reading time being sent again
+  until you read more. It is now retried on the next sync.
+- **The updater only installs a version newer than the one you have, and only the files
+  Seekquel lists.** An older or mismatched update is refused instead of replacing the
+  add-on, and any extra file inside the download is ignored.
+
 ## [1.16.0] - 2026-10-14
 
 ### Fixed
