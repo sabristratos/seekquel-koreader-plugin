@@ -16,6 +16,8 @@ local STAGING_SUFFIX = ".sq-staging"
 local PREVIOUS_SUFFIX = ".sq-previous"
 local DOWNLOAD_SUFFIX = ".sq-download"
 local SAFE_NAME = "^[%w%._%-/]+$"
+local RELEASE_VERSION = "^%d+%.%d+%.%d+$"
+local MAX_VERSION_LENGTH = 32
 
 function Updater:new(api)
     return setmetatable({ api = api }, self)
@@ -36,6 +38,10 @@ function Updater.parse(version)
 end
 
 function Updater.isNewer(candidate, current)
+    if type(candidate) ~= "string" or #candidate > MAX_VERSION_LENGTH or candidate:match(RELEASE_VERSION) == nil then
+        return false
+    end
+
     local left = Updater.parse(candidate)
     local right = Updater.parse(current)
 
