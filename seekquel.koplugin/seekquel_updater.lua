@@ -16,6 +16,10 @@ local STAGING_SUFFIX = ".sq-staging"
 local PREVIOUS_SUFFIX = ".sq-previous"
 local DOWNLOAD_SUFFIX = ".sq-download"
 local SAFE_NAME = "^[%w%._%-/]+$"
+local RELEASE_VERSION = "^%d+%.%d+%.%d+$"
+local MAX_VERSION_LENGTH = 32
+local ENTRY_POINT = "main.lua"
+local VERSION_DECLARATION = 'local VERSION = "([^"\n]*)"'
 
 function Updater:new(api)
     return setmetatable({ api = api }, self)
@@ -36,6 +40,10 @@ function Updater.parse(version)
 end
 
 function Updater.isNewer(candidate, current)
+    if type(candidate) ~= "string" or #candidate > MAX_VERSION_LENGTH or candidate:match(RELEASE_VERSION) == nil then
+        return false
+    end
+
     local left = Updater.parse(candidate)
     local right = Updater.parse(current)
 
@@ -61,13 +69,16 @@ function Updater.isSafeName(name)
         and name:match(SAFE_NAME) ~= nil
         and not name:find("%.%.")
         and name:sub(1, 1) ~= "/"
+        and name:sub(-1) ~= "/"
+        and not name:find("//", 1, true)
+        and ("/" .. name .. "/"):find("/%./") == nil
 end
 
 function Updater.canInstall()
     return Archiver ~= nil
 end
 
-function Updater:install(path, files)
+function Updater:install(path, files, version)
     if not Updater.canInstall() then
         logger.warn("Seekquel: this KOReader cannot unpack an update, so the add-on cannot replace itself")
 
@@ -82,16 +93,24 @@ function Updater:install(path, files)
         return false, "no_manifest"
     end
 
+    if type(version) ~= "string" or files[ENTRY_POINT] == nil then
+        return false, "bad_manifest"
+    end
+
+    local folded = {}
+
     for name in pairs(files) do
-        if not self.isSafeName(name) then
+        if not self.isSafeName(name) or folded[name:lower()] then
             return false, "bad_manifest"
         end
+
+        folded[name:lower()] = true
     end
 
     local staging = path .. STAGING_SUFFIX
     local archive = path .. DOWNLOAD_SUFFIX
 
-    local ok, reason = self:stage(staging, archive, files)
+    local ok, reason = self:stage(staging, archive, files, version)
 
     os.remove(archive)
 
@@ -104,7 +123,7 @@ function Updater:install(path, files)
     return self:swap(path, staging)
 end
 
-function Updater:stage(staging, archive, files)
+function Updater:stage(staging, archive, files, version)
     ffiUtil.purgeDir(staging)
 
     if not util.makePath(staging) then
@@ -115,14 +134,14 @@ function Updater:stage(staging, archive, files)
         return false, "download_failed"
     end
 
-    if not self:extract(archive, staging) then
+    if not self:extract(archive, staging, files) then
         return false, "unreadable_archive"
     end
 
-    return self:verify(staging, files)
+    return self:verify(staging, files, version)
 end
 
-function Updater:extract(archive, staging)
+function Updater:extract(archive, staging, files)
     local reader = Archiver.Reader:new()
 
     if not reader:open(archive) then
@@ -134,7 +153,7 @@ function Updater:extract(archive, staging)
     for entry in reader:iterate() do
         local name = entry.path:sub(#PLUGIN_PREFIX + 1)
 
-        if entry.mode == "file" and entry.path:sub(1, #PLUGIN_PREFIX) == PLUGIN_PREFIX and self.isSafeName(name) then
+        if entry.mode == "file" and entry.path:sub(1, #PLUGIN_PREFIX) == PLUGIN_PREFIX and self.isSafeName(name) and files[name] ~= nil then
             local destination = staging .. "/" .. name
 
             util.makePath(destination:match("^(.*)/[^/]+$") or staging)
@@ -155,7 +174,7 @@ function Updater:extract(archive, staging)
     return extracted > 0
 end
 
-function Updater:verify(staging, files)
+function Updater:verify(staging, files, version)
     for name, expected in pairs(files) do
         local handle = io.open(staging .. "/" .. name, "rb")
 
@@ -173,6 +192,25 @@ function Updater:verify(staging, files)
 
             return false, "corrupt"
         end
+    end
+
+    return self:matchesVersion(staging, version)
+end
+
+function Updater:matchesVersion(staging, version)
+    local handle = io.open(staging .. "/" .. ENTRY_POINT, "rb")
+
+    if handle == nil then
+        return false, "incomplete"
+    end
+
+    local bytes = handle:read("*a")
+    handle:close()
+
+    if bytes == nil or bytes:match(VERSION_DECLARATION) ~= version then
+        logger.warn("Seekquel: the download is not the version it was offered as", version)
+
+        return false, "bad_manifest"
     end
 
     return true

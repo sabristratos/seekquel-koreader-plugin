@@ -56,6 +56,7 @@ local function buildArchive(path)
         writer:addFileFromMemory("seekquel.koplugin/" .. name, body)
     end
 
+    writer:addFileFromMemory("seekquel.koplugin/unlisted.lua", "return 'not in the manifest'")
     writer:addFileFromMemory("LICENSE", "not inside the plugin directory")
     writer:addFileFromMemory("README.md", "also not")
     writer:close()
@@ -99,6 +100,14 @@ check("a version the server did not send is not", not Updater.isNewer(nil, "1.2.
 check("something that is not a version is not", not Updater.isNewer("unknown", "1.2.0"))
 check("a shorter equal prefix is not", not Updater.isNewer("1.2", "1.2.0"))
 check("a value that is not a version at all is not", not Updater.isNewer({}, "1.2.0"))
+check("a pre-release is not newer than its release", not Updater.isNewer("1.2.0-rc1", "1.2.0"))
+check("a pre-release is not newer than the version before it", not Updater.isNewer("1.3.0-rc1", "1.2.0"))
+check("a prefixed version is not", not Updater.isNewer("v1.3.0", "1.2.0"))
+check("a version with trailing text is not", not Updater.isNewer("1.3.0 and more", "1.2.0"))
+check("a four part version is not", not Updater.isNewer("1.3.0.1", "1.2.0"))
+check("a very long version is not", not Updater.isNewer(string.rep("9", 400) .. ".0.0", "1.2.0"))
+check("a very long run of parts is not", not Updater.isNewer(string.rep("1.", 100000) .. "1", "1.0.0"))
+check("a version number given as a number is not", not Updater.isNewer(2, "1.2.0"))
 check("a table cannot pass as a version through its address", not Updater.isNewer(setmetatable({}, {}), "1.2.0"))
 
 step("a manifest cannot name a file outside the add-on")
@@ -109,26 +118,30 @@ check("an absolute path is refused", not Updater.isSafeName("/etc/passwd"))
 check("traversal in the middle is refused", not Updater.isSafeName("a/../../b"))
 check("an empty name is refused", not Updater.isSafeName(""))
 check("a name that is not a string is refused", not Updater.isSafeName(nil))
+check("a current directory segment is refused", not Updater.isSafeName("./main.lua") and not Updater.isSafeName("a/./b.lua"))
+check("an empty segment is refused", not Updater.isSafeName("a//b.lua"))
+check("a directory is refused", not Updater.isSafeName("nested/"))
 check("a shell character is refused", not Updater.isSafeName("main.lua; rm -rf /"))
 
 step("a good download replaces the add-on")
 local live = freshInstall("live")
 write(live .. "/dropped.lua", "a file the new version does not have")
 
-local ok, reason = updater:install(live, manifest())
+local ok, reason = updater:install(live, manifest(), "9.9.9")
 
 check("it reports success", ok, reason)
 check("every file is the new one", read(live .. "/main.lua") == BODIES["main.lua"])
 check("a nested file arrives", read(live .. "/nested/deep.lua") == BODIES["nested/deep.lua"])
 check("a file the new version drops is gone", read(live .. "/dropped.lua") == nil)
 check("nothing outside the add-on directory is written", read(live .. "/LICENSE") == nil)
+check("a file the manifest does not list is not installed", read(live .. "/unlisted.lua") == nil)
 check("no staging directory is left behind", lfs.attributes(live .. ".sq-staging") == nil)
 check("no previous directory is left behind", lfs.attributes(live .. ".sq-previous") == nil)
 check("no download is left behind", lfs.attributes(live .. ".sq-download") == nil)
 
 step("a download that does not match the manifest changes nothing")
 local corrupt = freshInstall("corrupt")
-local ok2, reason2 = updater:install(corrupt, { ["main.lua"] = sha256("something else") })
+local ok2, reason2 = updater:install(corrupt, { ["main.lua"] = sha256("something else") }, "9.9.9")
 
 check("it reports failure", not ok2)
 check("it says the download was corrupt", reason2 == "corrupt", reason2)
@@ -139,7 +152,7 @@ step("a manifest naming a file the download lacks changes nothing")
 local short = freshInstall("short")
 local expected = manifest()
 expected["absent.lua"] = sha256("x")
-local ok3, reason3 = updater:install(short, expected)
+local ok3, reason3 = updater:install(short, expected, "9.9.9")
 
 check("it reports failure", not ok3)
 check("it says the download was incomplete", reason3 == "incomplete", reason3)
@@ -147,11 +160,48 @@ check("the running copy is untouched", read(short .. "/main.lua") == "the copy t
 
 step("a hostile manifest is refused before anything is downloaded")
 local hostile = freshInstall("hostile")
-local ok4, reason4 = updater:install(hostile, { ["../../../etc/passwd"] = sha256("x") })
+local ok4, reason4 = updater:install(hostile, { ["../../../etc/passwd"] = sha256("x") }, "9.9.9")
 
 check("it reports failure", not ok4)
 check("it says the manifest was bad", reason4 == "bad_manifest", reason4)
 check("the running copy is untouched", read(hostile .. "/main.lua") == "the copy that is already running")
+
+step("a manifest naming two files that differ only by case is refused")
+local folded = freshInstall("folded")
+local ok9, reason9 = updater:install(folded, {
+    ["main.lua"] = sha256(BODIES["main.lua"]),
+    ["Main.lua"] = sha256(BODIES["main.lua"]),
+}, "9.9.9")
+
+check("it reports failure", not ok9)
+check("it says the manifest was bad", reason9 == "bad_manifest", reason9)
+check("the running copy is untouched", read(folded .. "/main.lua") == "the copy that is already running")
+
+step("an update that is not the version it was offered as changes nothing")
+local replay = freshInstall("replay")
+local ok7, reason7 = updater:install(replay, manifest(), "9.9.10")
+
+check("it reports failure", not ok7)
+check("it says the manifest was bad", reason7 == "bad_manifest", reason7)
+check("the running copy is untouched", read(replay .. "/main.lua") == "the copy that is already running")
+check("nothing is left staged", lfs.attributes(replay .. ".sq-staging") == nil)
+
+local unversioned = freshInstall("unversioned")
+local ok8, reason8 = updater:install(unversioned, manifest())
+
+check("an install with no offered version is refused", not ok8 and reason8 == "bad_manifest", reason8)
+check("and leaves the running copy alone", read(unversioned .. "/main.lua") == "the copy that is already running")
+
+step("a manifest without main.lua is refused, since the add-on could not load")
+local headless = freshInstall("headless")
+write(headless .. "/_meta.lua", "the metadata that is already running")
+local ok6, reason6 = updater:install(headless, { ["nested/deep.lua"] = sha256(BODIES["nested/deep.lua"]) }, "9.9.9")
+
+check("it reports failure", not ok6)
+check("it says the manifest was bad", reason6 == "bad_manifest", reason6)
+check("main.lua is still there", read(headless .. "/main.lua") == "the copy that is already running")
+check("the other files are still there", read(headless .. "/_meta.lua") == "the metadata that is already running")
+check("nothing is left staged", lfs.attributes(headless .. ".sq-staging") == nil)
 
 step("a swap that cannot be completed says the add-on is stranded")
 local stranded = freshInstall("stranded")
@@ -175,7 +225,7 @@ os.rename = function(from, to)
     return nil
 end
 
-local ok5, reason5 = blocked:install(stranded, manifest())
+local ok5, reason5 = blocked:install(stranded, manifest(), "9.9.9")
 os.rename = realRename
 
 check("it reports failure", not ok5)
