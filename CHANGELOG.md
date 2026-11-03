@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0] - 2026-11-03
+
+### Added
+
+- **The stars you give a book in KOReader now reach Seekquel.** Rate a book on KOReader's
+  own status page and the rating is sent with the next sync. Before this, only a rating
+  chosen from the Seekquel menu was sent, so stars given on the status page stayed on the
+  device. A rating already in Seekquel is never overwritten by a star you gave earlier, and
+  taking a star away on the device clears nothing there.
+
 ## [1.16.0] - 2026-10-14
 
 ### Fixed

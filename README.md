@@ -131,7 +131,9 @@ Everything is under **Tools > Seekquel > Settings**.
   screens: Finished becomes Read, On hold becomes Paused. It only sends a change
   you make on the device, so a status you set in the app is never overwritten. Setting it
   from the file browser while the book is closed reaches Seekquel the next time you open
-  and sync that book.
+  and sync that book. The stars you give a book on KOReader's status page travel with it,
+  and only when you set or change them: a rating already in Seekquel is never overwritten
+  by a star you gave before, and taking a star away on the device clears nothing.
 - **Sync while reading** off means it only syncs when you close a book.
 - **Send highlights automatically** off means your passages stay on the device until you
   tap **Sync now**. Your place in the book and your reading time keep syncing either way.

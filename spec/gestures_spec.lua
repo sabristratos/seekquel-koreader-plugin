@@ -274,4 +274,61 @@ do
     check("and is remembered as paused from now on", plugin.settings:lastStatus(DIGEST) == "paused", plugin.settings:lastStatus(DIGEST))
 end
 
+step("A star rating given in KOReader reaches Seekquel without overwriting one set there")
+
+do
+    local plugin = build(true, true)
+    local sent = {}
+    local device_rating = 4
+
+    plugin.ui.doc_settings = {
+        readSetting = function(_self, key)
+            if key == "summary" then
+                return { status = "reading", rating = device_rating }
+            end
+        end,
+    }
+    plugin.hasBudget = function()
+        return true
+    end
+    plugin.api.setRating = function(_self, _digest, rating)
+        table.insert(sent, rating)
+
+        return { book = { rating = rating } }
+    end
+
+    check("a whole star is read from the device", plugin:documentRating() == 4, plugin:documentRating())
+
+    plugin.document_state = { book = { rating = nil } }
+    plugin:sendRatingChange(DIGEST)
+
+    check("a first rating on a book Seekquel has none for is sent", sent[1] == 4, sent[1])
+
+    sent = {}
+    plugin:sendRatingChange(DIGEST)
+
+    check("the same rating is not sent twice", #sent == 0, #sent)
+
+    device_rating = 5
+    plugin:sendRatingChange(DIGEST)
+
+    check("a changed rating is sent", sent[1] == 5, sent[1])
+
+    sent = {}
+    plugin.settings:markRating(DIGEST, nil)
+    plugin.document_state = { book = { rating = 4.3 } }
+    plugin:sendRatingChange(DIGEST)
+
+    check("a first sight never overwrites a rating Seekquel already holds", #sent == 0, #sent)
+    check("and is remembered so only a later change is sent", plugin.settings:lastRating(DIGEST) == 5, plugin.settings:lastRating(DIGEST))
+
+    device_rating = nil
+    plugin:sendRatingChange(DIGEST)
+
+    check("a star taken away on the device clears nothing in Seekquel", #sent == 0, #sent)
+
+    device_rating = 0
+    check("zero stars is no rating", plugin:documentRating() == nil, plugin:documentRating())
+end
+
 harness.report()

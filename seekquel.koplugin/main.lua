@@ -29,7 +29,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.16.0"
+local VERSION = "1.17.0"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -92,6 +92,8 @@ local NOT_LINKED_TEXT = _("Nothing is sent for this book until you tell Seekquel
 local STILL_WAITING_TEXT = _("Some reading is still waiting to sync.")
 
 local RATINGS = { 1, 2, 3, 4, 5 }
+
+local NO_RATING = 0
 
 local SWITCHES = {
     { key = "send_reading_time", default = true, label = _("Send reading time") },
@@ -914,6 +916,10 @@ function Seekquel:pushNow(asked_for, leaving, continuing, prepared, completed)
             self:sendStatusChange(digest)
         end
 
+        if self:hasBudget() then
+            self:sendRatingChange(digest)
+        end
+
         if not leaving and self:hasBudget() then
             self:sendFileMetadata()
         end
@@ -989,6 +995,67 @@ function Seekquel:sendStatusChange(digest)
         self.document_state = state
         self.settings:markStatus(digest, status)
         self:recordStatusMark(digest, state)
+    end
+end
+
+function Seekquel:documentRating()
+    if self.ui.doc_settings == nil then
+        return nil
+    end
+
+    local ok, summary = pcall(function()
+        return self.ui.doc_settings:readSetting("summary")
+    end)
+
+    if not ok or type(summary) ~= "table" then
+        return nil
+    end
+
+    local rating = tonumber(summary.rating)
+
+    for _index, stars in ipairs(RATINGS) do
+        if stars == rating then
+            return rating
+        end
+    end
+
+    return nil
+end
+
+function Seekquel:sendRatingChange(digest)
+    if not self.settings:isEnabled("send_status", true) or not self:hasBudget() then
+        return
+    end
+
+    local rating = self:documentRating()
+    local seen = self.settings:lastRating(digest)
+
+    if rating == nil then
+        if seen == nil then
+            self.settings:markRating(digest, NO_RATING)
+        end
+
+        return
+    end
+
+    if seen == rating then
+        return
+    end
+
+    local book = self:book()
+    local held = book and tonumber(book.rating) or nil
+
+    if held == rating or (seen == nil and held ~= nil) then
+        self.settings:markRating(digest, rating)
+
+        return
+    end
+
+    local state = self.api:setRating(digest, rating)
+
+    if state ~= nil then
+        self.document_state = state
+        self.settings:markRating(digest, rating)
     end
 end
 

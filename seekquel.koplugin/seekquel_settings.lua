@@ -22,6 +22,7 @@ local PER_BOOK_KEYS = {
     "highlights_sent",
     "status_seen",
     "status_mark",
+    "rating_seen",
     "reading_summaries",
     "resume_dismissed",
 }
@@ -406,6 +407,18 @@ function Settings:markStatus(digest, status)
     local seen = self:get("status_seen", {})
     seen[digest] = status
     self:set("status_seen", seen)
+end
+
+function Settings:lastRating(digest)
+    local seen = self:get("rating_seen", {})
+
+    return seen[digest]
+end
+
+function Settings:markRating(digest, rating)
+    local seen = self:get("rating_seen", {})
+    seen[digest] = rating
+    self:set("rating_seen", seen)
 end
 
 function Settings:statusMark(digest)
