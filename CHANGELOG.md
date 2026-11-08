@@ -4,6 +4,38 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.0] - 2026-11-08
+
+### Added
+
+- **Sync now and Sync status say when syncing is switched off for a book in Seekquel.**
+  Seekquel lets you stop devices from updating a single book from its My book page. The
+  add-on keeps working as before and Seekquel discards what it sends for that book, so
+  Sync now no longer reports a summary of reading that was not kept. Sync now checks with
+  Seekquel each time, so switching a book back on in the app is reflected straight away.
+  When Seekquel cannot be reached, Sync now and Sync status say syncing may be switched
+  off instead of stating it.
+- **A book switched off in Seekquel says so when you open it.** A short message appears
+  after the book opens and Seekquel confirms it, the Seekquel menu is titled "Seekquel
+  (off for this book)" and the book row reads "syncing off". The offer to resume from
+  Seekquel is skipped for it. A book opened without a connection shows no message.
+- **Stop or start syncing a book from the Seekquel menu.** "Stop syncing this book" and
+  "Start syncing this book" do what the switch on the book's page in Seekquel does,
+  without leaving the reader. Without a connection it tells you so, on a Seekquel server
+  that does not support the switch yet it says that instead of failing quietly, and on a
+  file Seekquel no longer links to a book it asks which book it is.
+
+### Fixed
+
+- **A book you finish or rate in KOReader while Seekquel is not syncing it is sent once
+  syncing is back on.** The add-on used to treat the change as delivered when Seekquel
+  discarded it. Marking a status or rating from the Seekquel menu on such a book now says
+  nothing was kept, so you can set it again once syncing is back on.
+- **The book's file details are not sent over and over while syncing is off.** They wait
+  and are sent once, after syncing is switched back on.
+- **Opening the Seekquel menu refreshes whether a book is switched off,** and a book that
+  is no longer linked no longer keeps its "off" label.
+
 ## [1.17.0] - 2026-11-03
 
 ### Added

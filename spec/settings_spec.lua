@@ -397,4 +397,70 @@ do
         settings:updateAttempt() == nil, "still stored")
 end
 
+step("A book switched off in Seekquel is remembered per book")
+do
+    local settings = fresh()
+
+    check("a book nothing is known about is not switched off",
+        settings:isSyncPaused("digest") == false, tostring(settings:isSyncPaused("digest")))
+
+    settings:markSyncPaused("digest", true)
+    check("a switched-off book is remembered", settings:isSyncPaused("digest") == true,
+        tostring(settings:isSyncPaused("digest")))
+
+    check("and only that book", settings:isSyncPaused("other") == false,
+        tostring(settings:isSyncPaused("other")))
+
+    settings:markSyncPaused("other", true)
+    settings:markSyncPaused("digest", false)
+    check("switching it back on forgets it", settings:isSyncPaused("digest") == false,
+        tostring(settings:isSyncPaused("digest")))
+
+    check("without touching another book", settings:isSyncPaused("other") == true,
+        tostring(settings:isSyncPaused("other")))
+
+    check("and leaves no entry behind for the book that was switched back on",
+        settings:get("sync_paused", {}).digest == nil, tostring(settings:get("sync_paused", {}).digest))
+end
+
+do
+    local settings = fresh()
+    local writes = 0
+    local set = settings.set
+
+    settings.set = function(store, key, value)
+        writes = writes + 1
+
+        return set(store, key, value)
+    end
+
+    settings:markSyncPaused("digest", false)
+    settings:markSyncPaused("digest", true)
+    settings:markSyncPaused("digest", true)
+
+    check("an unchanged answer is not written again, because every document lookup reports it",
+        writes == 1, writes)
+
+    settings:markSyncPaused("digest", false)
+    check("a change is written", writes == 2, writes)
+end
+
+do
+    local settings = fresh()
+
+    settings:markSyncPaused("digest", true)
+    settings:markSyncPaused("other", true)
+    settings:forgetBook("digest")
+
+    check("relinking a file forgets that it was switched off",
+        settings:isSyncPaused("digest") == false, tostring(settings:isSyncPaused("digest")))
+
+    check("and leaves other books alone", settings:isSyncPaused("other") == true,
+        tostring(settings:isSyncPaused("other")))
+
+    settings:disconnect()
+    check("disconnecting forgets every book, so a re-paired device does not announce an old switch",
+        settings:isSyncPaused("other") == false, tostring(settings:isSyncPaused("other")))
+end
+
 harness.report()

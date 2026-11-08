@@ -2,6 +2,44 @@ package.path = "/plugin/seekquel.koplugin/?.lua;/plugin/spec/?.lua;" .. package.
 
 local recorder = require("stubs")
 local harness = require("harness")
+local dkjson = require("dkjson")
+
+local server = { routes = {}, calls = {} }
+
+local function answerRequest(request)
+    local path = request.url:match("/koreader(/[^?]*)")
+    local body = nil
+
+    if request.source ~= nil then
+        local chunk = request.source()
+
+        body = chunk and dkjson.decode(chunk) or nil
+    end
+
+    local key = request.method .. " " .. tostring(path)
+    table.insert(server.calls, { key = key, body = body })
+
+    local route = server.routes[key]
+
+    if route == nil then
+        return nil, "closed"
+    end
+
+    local status, answer = route(body)
+
+    if status == nil then
+        return nil, "timeout"
+    end
+
+    if answer ~= nil then
+        request.sink(dkjson.encode(answer))
+    end
+
+    return 1, status
+end
+
+package.loaded["socket.http"] = { request = answerRequest }
+package.loaded["ssl.https"] = { request = answerRequest }
 
 local Seekquel = require("main")
 
@@ -329,6 +367,420 @@ do
 
     device_rating = 0
     check("zero stars is no rating", plugin:documentRating() == nil, plugin:documentRating())
+end
+
+step("A change made while Seekquel is not syncing the book stays pending until it is")
+
+do
+    local plugin = build(true, true)
+    local calls = 0
+    local paused = true
+    local device_status = "complete"
+    local device_rating = 4
+
+    plugin.ui.doc_settings = {
+        readSetting = function(_self, key)
+            if key == "summary" then
+                return { status = device_status, rating = device_rating }
+            end
+        end,
+    }
+    plugin.hasBudget = function()
+        return true
+    end
+    plugin.recordStatusMark = function() end
+    plugin.api.setStatus = function(_self, _digest, status)
+        calls = calls + 1
+
+        return { book = { status = status, device_sync_paused = paused } }, paused
+    end
+    plugin.api.setRating = function(_self, _digest, rating)
+        calls = calls + 1
+
+        return { book = { rating = rating, device_sync_paused = paused } }, paused
+    end
+
+    plugin.document_state = { book = { rating = nil, device_sync_paused = false } }
+    plugin.settings:markStatus(DIGEST, "reading")
+    plugin.settings:markRating(DIGEST, 2)
+
+    plugin:sendStatusChange(DIGEST)
+    check("a status the server discarded is not recorded as seen",
+        plugin.settings:lastStatus(DIGEST) == "reading", plugin.settings:lastStatus(DIGEST))
+
+    plugin.document_state = { book = { rating = nil, device_sync_paused = false } }
+    plugin:sendRatingChange(DIGEST)
+    check("a rating the server discarded is not recorded as seen",
+        plugin.settings:lastRating(DIGEST) == 2, plugin.settings:lastRating(DIGEST))
+
+    check("both were tried once", calls == 2, calls)
+
+    plugin:sendStatusChange(DIGEST)
+    plugin:sendRatingChange(DIGEST)
+    check("once the book is known to be switched off nothing more is sent for it",
+        calls == 2, calls)
+
+    check("the switched-off state is remembered for the book",
+        plugin.settings:isSyncPaused(DIGEST) == true, tostring(plugin.settings:isSyncPaused(DIGEST)))
+
+    paused = false
+    plugin.document_state = { book = { rating = nil, device_sync_paused = false } }
+    plugin:sendStatusChange(DIGEST)
+    plugin:sendRatingChange(DIGEST)
+
+    check("after it is switched back on the pending status is sent",
+        plugin.settings:lastStatus(DIGEST) == "read", plugin.settings:lastStatus(DIGEST))
+    check("and so is the pending rating", plugin.settings:lastRating(DIGEST) == 4,
+        plugin.settings:lastRating(DIGEST))
+    check("and the remembered state is cleared", plugin.settings:isSyncPaused(DIGEST) == false,
+        tostring(plugin.settings:isSyncPaused(DIGEST)))
+end
+
+step("The file details wait while Seekquel is not syncing the book")
+
+do
+    local plugin = build(true, true)
+    local pushed = 0
+
+    plugin.metadata_reader = {
+        collect = function()
+            return { title = "Toll the Hounds" }
+        end,
+    }
+    plugin.api.pushMetadata = function()
+        pushed = pushed + 1
+
+        return { details_stored = true, book = { device_sync_paused = false } }
+    end
+
+    plugin.document_state = { book = { device_sync_paused = true } }
+    plugin:sendFileMetadata()
+
+    check("nothing is collected or sent for a switched-off book", pushed == 0, pushed)
+    check("and they stay unsent", plugin.settings:hasSentDetails(DIGEST) == false,
+        tostring(plugin.settings:hasSentDetails(DIGEST)))
+
+    plugin.document_state = { book = { device_sync_paused = false } }
+    plugin:sendFileMetadata()
+
+    check("they go once it is switched back on", pushed == 1, pushed)
+    check("and are then marked sent", plugin.settings:hasSentDetails(DIGEST) == true,
+        tostring(plugin.settings:hasSentDetails(DIGEST)))
+end
+
+step("Switching syncing for a book says why when it cannot be done")
+
+do
+    local plugin = build(true, true)
+    local requested = 0
+
+    plugin.settings:setKey("KEY")
+
+    local spoke = saidSomething()
+
+    plugin.api.setSyncPaused = function()
+        requested = requested + 1
+
+        return nil, 404
+    end
+
+    plugin:setSyncPaused(true)
+
+    check("an older server is named as the reason", spoke() and lastMessage():find("cannot switch syncing", 1, true) ~= nil,
+        lastMessage())
+    check("and the book is not marked as switched off", plugin.settings:isSyncPaused(DIGEST) == false,
+        tostring(plugin.settings:isSyncPaused(DIGEST)))
+
+    plugin.api.setSyncPaused = function()
+        return nil, nil
+    end
+
+    plugin:setSyncPaused(true)
+
+    check("an unreachable server is a connection problem", lastMessage():find("connection", 1, true) ~= nil,
+        lastMessage())
+
+    plugin.canReachNetwork = function()
+        return false
+    end
+    plugin.api.setSyncPaused = function()
+        requested = requested + 1
+
+        return {}, 200
+    end
+
+    local before = requested
+    local spoke_offline = saidSomething()
+
+    plugin:setSyncPaused(true)
+
+    check("with no way to connect it says so rather than doing nothing", spoke_offline(), "silent")
+    check("and asks the server nothing", requested == before, requested)
+end
+
+local PAUSED_TEXT = "Syncing is switched off for this book in Seekquel, so nothing is kept for it."
+local PAUSED_UNCONFIRMED_TEXT = "Syncing may be switched off for this book in Seekquel. Connect to check."
+local PAUSED_REMINDER_TEXT = "Seekquel is not syncing this book. You switched it off."
+local NOT_LINKED_TEXT = "Nothing is sent for this book until you tell Seekquel which book it is."
+local LOOKUP = "GET /documents/" .. DIGEST
+local POSITION = "PUT /syncs/progress"
+local STATUS_WRITE = "PUT /documents/" .. DIGEST .. "/status"
+local RATING_WRITE = "PUT /documents/" .. DIGEST .. "/rating"
+local SYNC_SWITCH = "PUT /documents/" .. DIGEST .. "/sync"
+local DISCARDED = { data = { book = { device_sync_paused = true } }, paused = true }
+
+local function connected(document_state)
+    local plugin = build(true, false)
+
+    plugin.settings.store.data = {}
+    plugin.settings:setKey("KEY")
+    plugin.settings:set("show_reading_summary", false)
+    plugin.settings:markDetailsSent(DIGEST)
+    plugin.document_state = document_state
+    plugin.position:reset(100)
+    plugin.position:settle("place-25", 0.25)
+    plugin.ensureChapters = function() end
+    plugin.reportDeviceIfDue = function() end
+    plugin.ui.rolling = {
+        getLastProgress = function() return "place-25" end,
+        getLastPercent = function() return 0.25 end,
+    }
+
+    server.routes = {}
+    server.calls = {}
+
+    return plugin
+end
+
+local function serve(key, handler)
+    server.routes[key] = handler
+end
+
+local function asked(key)
+    local count = 0
+
+    for _index, call in ipairs(server.calls) do
+        if call.key == key then
+            count = count + 1
+        end
+    end
+
+    return count
+end
+
+local function askedAt(key)
+    for index, call in ipairs(server.calls) do
+        if call.key == key then
+            return index
+        end
+    end
+
+    return nil
+end
+
+local function bodyOf(key)
+    for _index, call in ipairs(server.calls) do
+        if call.key == key then
+            return call.body
+        end
+    end
+
+    return nil
+end
+
+local function unreachable()
+    return nil
+end
+
+local function answers(status, body)
+    return function()
+        return status, body
+    end
+end
+
+local function pausedBook()
+    return { title = "Toll the Hounds", device_sync_paused = true }
+end
+
+local function syncingBook()
+    return { title = "Toll the Hounds", device_sync_paused = false }
+end
+
+local function saidSince(before, text)
+    for index = before + 1, #recorder.messages do
+        if recorder.messages[index] == text then
+            return true
+        end
+    end
+
+    return false
+end
+
+step("Opening the Seekquel menu on a poor connection does not stop the next tap")
+
+do
+    local plugin = connected({ book = syncingBook() })
+
+    serve(LOOKUP, unreachable)
+    plugin:menuItems()
+
+    check("the menu looked the book up", asked(LOOKUP) == 1, asked(LOOKUP))
+    check("a lookup that timed out does not mark the server unreachable",
+        plugin.settings:isUnreachable() == false, tostring(plugin.settings:isUnreachable()))
+
+    serve(STATUS_WRITE, answers(200, DISCARDED))
+    plugin:setStatus("read", "Read")
+
+    check("the next Mark as tap still reaches Seekquel", asked(STATUS_WRITE) == 1, asked(STATUS_WRITE))
+    check("a status Seekquel discarded says nothing was kept", lastMessage() == PAUSED_TEXT, lastMessage())
+    check("and the book is remembered as switched off", plugin.settings:isSyncPaused(DIGEST) == true,
+        tostring(plugin.settings:isSyncPaused(DIGEST)))
+
+    serve(RATING_WRITE, answers(200, DISCARDED))
+    plugin:setRating(3, "Rated 3 stars.")
+
+    check("a rating Seekquel discarded says the same", lastMessage() == PAUSED_TEXT, lastMessage())
+end
+
+step("The menu and Sync status ask Seekquel at most once a minute")
+
+do
+    local plugin = connected({ book = syncingBook() })
+
+    serve(LOOKUP, answers(200, { data = { book = pausedBook() } }))
+    plugin:menuItems()
+
+    check("the first opening asks", asked(LOOKUP) == 1, asked(LOOKUP))
+
+    local status = plugin:syncStatusText()
+
+    check("Sync status right after it does not ask again", asked(LOOKUP) == 1, asked(LOOKUP))
+    check("and states the answer as confirmed", status:find(PAUSED_TEXT, 1, true) ~= nil, status)
+
+    plugin.document_checked_at = os.time() - 61
+    plugin:menuItems()
+
+    check("a minute later the menu asks again", asked(LOOKUP) == 2, asked(LOOKUP))
+end
+
+step("A book switched off in Seekquel says so when it opens")
+
+do
+    local plugin = connected({ book = syncingBook() })
+
+    serve(LOOKUP, answers(200, { data = { book = pausedBook() } }))
+    serve(POSITION, answers(200, {}))
+
+    local before = #recorder.messages
+
+    plugin:scheduleOpeningSync(DIGEST)
+    recorder.scheduled[#recorder.scheduled].task()
+
+    check("the reader is reminded once Seekquel answers", saidSince(before, PAUSED_REMINDER_TEXT), lastMessage())
+
+    plugin = connected({ book = pausedBook() })
+    plugin.settings:markSyncPaused(DIGEST, true)
+    serve(LOOKUP, unreachable)
+
+    before = #recorder.messages
+    plugin:scheduleOpeningSync(DIGEST)
+    recorder.scheduled[#recorder.scheduled].task()
+
+    check("a book opened without an answer gets no reminder", not saidSince(before, PAUSED_REMINDER_TEXT),
+        lastMessage())
+end
+
+step("Sync now on a switched-off book says nothing was kept")
+
+do
+    local plugin = connected({ book = syncingBook() })
+
+    serve(POSITION, answers(200, {}))
+    serve(LOOKUP, answers(200, { data = { book = pausedBook() } }))
+
+    plugin:onSeekquelSyncNow()
+
+    check("it names the switch rather than a summary", lastMessage() == PAUSED_TEXT, lastMessage())
+    check("it looks the book up once", asked(LOOKUP) == 1, asked(LOOKUP))
+    check("after the position is sent", (askedAt(POSITION) or 0) < (askedAt(LOOKUP) or 0),
+        tostring(askedAt(POSITION)) .. " then " .. tostring(askedAt(LOOKUP)))
+end
+
+step("Sync now without an answer from Seekquel does not claim the book is off")
+
+do
+    local plugin = connected({ book = pausedBook() })
+
+    plugin.settings:markSyncPaused(DIGEST, true)
+    serve(POSITION, answers(200, {}))
+    serve(LOOKUP, unreachable)
+
+    plugin:onSeekquelSyncNow()
+
+    check("it says syncing may be off", lastMessage() == PAUSED_UNCONFIRMED_TEXT, lastMessage())
+    check("and the lookup that failed leaves later taps free", plugin.settings:isUnreachable() == false,
+        tostring(plugin.settings:isUnreachable()))
+end
+
+step("Only Sync now looks the book up, and only once")
+
+do
+    local plugin = connected({ book = syncingBook() })
+
+    serve(POSITION, answers(200, {}))
+    serve(LOOKUP, answers(200, { data = { book = syncingBook() } }))
+
+    plugin:pushNow(true)
+
+    check("a follow-up push after a resume offer asks nothing", asked(LOOKUP) == 0, asked(LOOKUP))
+
+    plugin = connected({ book = nil })
+    serve(POSITION, answers(200, {}))
+    serve(LOOKUP, answers(200, { data = { book = dkjson.null } }))
+
+    plugin:onSeekquelSyncNow()
+
+    check("a file that is not linked is looked up once, not twice", asked(LOOKUP) == 1, asked(LOOKUP))
+    check("and the reader is asked which book it is", lastMessage() == NOT_LINKED_TEXT, lastMessage())
+end
+
+step("Switching syncing back on sends the current place at once")
+
+do
+    local plugin = connected({ book = pausedBook() })
+
+    plugin.settings:markSyncPaused(DIGEST, true)
+    plugin.pushed_progress = "place-25"
+
+    serve(SYNC_SWITCH, answers(200, { data = { book = syncingBook() } }))
+    serve(POSITION, answers(200, {}))
+
+    plugin:setSyncPaused(false)
+
+    local sent = bodyOf(SYNC_SWITCH)
+
+    check("Seekquel is asked to switch it back on", sent ~= nil and sent.paused == false, sent and tostring(sent.paused))
+    check("the reader is told", lastMessage() == "Seekquel is syncing this book again.", lastMessage())
+    check("the place already sent is sent again", asked(POSITION) == 1, asked(POSITION))
+    check("and becomes the place sent", plugin.pushed_progress == "place-25", plugin.pushed_progress)
+    check("the stored switch is cleared", plugin.settings:isSyncPaused(DIGEST) == false,
+        tostring(plugin.settings:isSyncPaused(DIGEST)))
+    check("and the book reads as syncing", plugin:isPaused() == false, tostring(plugin:isPaused()))
+end
+
+step("Switching syncing for a file Seekquel no longer links says so")
+
+do
+    local plugin = connected({ book = syncingBook() })
+
+    serve(SYNC_SWITCH, answers(409, { error = "document_not_linked" }))
+    serve(LOOKUP, answers(200, { data = { book = dkjson.null } }))
+
+    plugin:setSyncPaused(true)
+
+    check("the reader is asked which book it is", lastMessage() == NOT_LINKED_TEXT, lastMessage())
+    check("the book is looked up again", asked(LOOKUP) == 1, asked(LOOKUP))
+    check("and no longer reads as linked", plugin:isLinked() == false, tostring(plugin:isLinked()))
 end
 
 harness.report()

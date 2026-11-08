@@ -16,11 +16,16 @@ local LEAVING_TOTAL_TIMEOUT = 2
 local SLOW_CALL_SECONDS = 5
 local BACKOFF_SECONDS = 120
 
+local MENU_BLOCK_TIMEOUT = 2
+local MENU_TOTAL_TIMEOUT = 4
+
 local UPLOAD_TIMEOUT = { block = UPLOAD_BLOCK_TIMEOUT, total = UPLOAD_TOTAL_TIMEOUT }
 
 local Api = {}
 Api.__index = Api
 Api.LEAVING_TIMEOUT = { block = LEAVING_BLOCK_TIMEOUT, total = LEAVING_TOTAL_TIMEOUT }
+Api.MENU_TIMEOUT = { block = MENU_BLOCK_TIMEOUT, total = MENU_TOTAL_TIMEOUT }
+Api.WITHOUT_BACKOFF = { arms_backoff = false }
 
 local function withoutNulls(value)
     if type(value) ~= "table" then
@@ -50,7 +55,7 @@ function Api:clearBackoff()
     self.settings:clearUnreachable()
 end
 
-function Api:request(method, path, body, query, timeout)
+function Api:request(method, path, body, query, timeout, options)
     if self.settings:isUnreachable() then
         logger.warn("Seekquel: skipping", method, path, "until the server answers again")
 
@@ -121,7 +126,10 @@ function Api:request(method, path, body, query, timeout)
 
     if not ok or result == nil then
         logger.warn("Seekquel: could not reach", method, path, tostring(code))
-        self.settings:markUnreachable(BACKOFF_SECONDS)
+
+        if options == nil or options.arms_backoff ~= false then
+            self.settings:markUnreachable(BACKOFF_SECONDS)
+        end
 
         return nil, nil
     end
@@ -244,8 +252,8 @@ function Api:pushMetadata(digest, metadata)
     return body and body.data or nil
 end
 
-function Api:document(digest)
-    local body = self:request("GET", "/documents/" .. digest)
+function Api:document(digest, timeout, options)
+    local body = self:request("GET", "/documents/" .. digest, nil, nil, timeout, options)
 
     return body and body.data or nil
 end
@@ -256,16 +264,29 @@ function Api:linkDocument(digest, work_id)
     return body and body.data or nil
 end
 
-function Api:setStatus(digest, status)
-    local body = self:request("PUT", "/documents/" .. digest .. "/status", { status = status })
+local function documentWrite(body)
+    if body == nil then
+        return nil, false
+    end
 
-    return body and body.data or nil
+    local state = body.data
+    local discarded = body.paused == true or (type(state) == "table" and state.paused == true)
+
+    return state, discarded
+end
+
+function Api:setStatus(digest, status)
+    return documentWrite(self:request("PUT", "/documents/" .. digest .. "/status", { status = status }))
 end
 
 function Api:setRating(digest, rating)
-    local body = self:request("PUT", "/documents/" .. digest .. "/rating", { rating = rating })
+    return documentWrite(self:request("PUT", "/documents/" .. digest .. "/rating", { rating = rating }))
+end
 
-    return body and body.data or nil
+function Api:setSyncPaused(digest, paused)
+    local body, status = self:request("PUT", "/documents/" .. digest .. "/sync", { paused = paused })
+
+    return body and body.data or nil, status
 end
 
 function Api:searchBooks(query)

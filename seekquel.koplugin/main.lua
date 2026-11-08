@@ -29,7 +29,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.17.0"
+local VERSION = "1.18.0"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -90,6 +90,17 @@ local ON_HOLD_STATUS_BEFORE_1_16 = "did_not_finish"
 
 local NOT_LINKED_TEXT = _("Nothing is sent for this book until you tell Seekquel which book it is.")
 local STILL_WAITING_TEXT = _("Some reading is still waiting to sync.")
+local PAUSED_TEXT = _("Syncing is switched off for this book in Seekquel, so nothing is kept for it.")
+local PAUSED_UNCONFIRMED_TEXT = _("Syncing may be switched off for this book in Seekquel. Connect to check.")
+local NEEDS_CONNECTION_TEXT = _("Could not save that. Try again when you have a connection.")
+local SYNC_UNSUPPORTED_TEXT = _("This Seekquel server cannot switch syncing for a book yet. Try again after Seekquel updates.")
+local NOT_FOUND_STATUS = 404
+local CONFLICT_STATUS = 409
+local DOCUMENT_FRESH_SECONDS = 60
+local PAUSED_REMINDER_TEXT = _("Seekquel is not syncing this book. You switched it off.")
+local PAUSED_REMINDER_SECONDS = 4
+local SYNC_OFF_CONFIRMATION = _("Seekquel will stop syncing this book.")
+local SYNC_ON_CONFIRMATION = _("Seekquel is syncing this book again.")
 
 local RATINGS = { 1, 2, 3, 4, 5 }
 
@@ -118,6 +129,9 @@ function Seekquel:init()
 
     self.digest = nil
     self.document_state = nil
+    self.document_loads = 0
+    self.document_checked_digest = nil
+    self.document_checked_at = nil
     self.pages_turned = 0
     self.pushed_progress = nil
     self.push_scheduled = false
@@ -264,7 +278,9 @@ function Seekquel:scheduleOpeningSync(digest)
 
             self:applyFinishedStatus(digest, state)
 
-            if self:offerResume(state, true) then
+            if state ~= nil and self:isPaused() then
+                self:remindPaused()
+            elseif self:offerResume(state, true) then
                 return
             end
 
@@ -513,14 +529,50 @@ function Seekquel:ensureDocument()
     return self:loadDocument(self.digest)
 end
 
-function Seekquel:loadDocument(digest)
-    local state = self.api:document(digest)
+function Seekquel:loadDocument(digest, timeout, options)
+    local state = self.api:document(digest, timeout, options)
 
     if type(state) == "table" then
-        self.document_state = state
+        self:adoptDocument(digest, state)
+        self.document_loads = self.document_loads + 1
+        self.document_checked_digest = digest
+        self.document_checked_at = os.time()
     end
 
     return state
+end
+
+function Seekquel:checkDocument(digest)
+    return self:loadDocument(digest, Api.MENU_TIMEOUT, Api.WITHOUT_BACKOFF)
+end
+
+function Seekquel:documentIsFresh()
+    return self.document_checked_at ~= nil
+        and self.document_checked_digest == self.digest
+        and (os.time() - self.document_checked_at) < DOCUMENT_FRESH_SECONDS
+end
+
+function Seekquel:refreshDocument()
+    if self.digest == nil or not self.api:isConfigured() or not NetworkMgr:isOnline() then
+        return false
+    end
+
+    if self:documentIsFresh() then
+        return true
+    end
+
+    return type(self:checkDocument(self.digest)) == "table"
+end
+
+function Seekquel:adoptDocument(digest, state)
+    self.document_state = state
+    self:rememberPaused(digest, state)
+end
+
+function Seekquel:rememberPaused(digest, state)
+    local paused = type(state.book) == "table" and state.book.device_sync_paused == true
+
+    self.settings:markSyncPaused(digest, paused)
 end
 
 function Seekquel:offerResume(state, automatic)
@@ -647,7 +699,7 @@ function Seekquel:whenIdle(digest, task)
 end
 
 function Seekquel:sendFileMetadata()
-    if self.digest == nil or self.settings:hasSentDetails(self.digest) then
+    if self.digest == nil or self.settings:hasSentDetails(self.digest) or self:isPaused() then
         return
     end
 
@@ -663,7 +715,7 @@ function Seekquel:sendFileMetadata()
         return
     end
 
-    self.document_state = state
+    self:adoptDocument(self.digest, state)
 
     if state.details_stored == true then
         self.settings:markDetailsSent(self.digest)
@@ -758,7 +810,11 @@ function Seekquel:onEndOfBook()
 
     self:whenOnline(function()
         if self.digest and self:isLinked() then
-            self.document_state = self.api:setStatus(self.digest, "read") or self.document_state
+            local state = self.api:setStatus(self.digest, "read")
+
+            if state ~= nil then
+                self:adoptDocument(self.digest, state)
+            end
         end
     end)
 end
@@ -832,13 +888,14 @@ function Seekquel:pushNow(asked_for, leaving, continuing, prepared, completed)
             self:beginRun(leaving and LEAVING_BUDGET_SECONDS or nil)
         end
 
+        local loads = self.document_loads
         local sent = self:sendProgress(timeout)
 
-        if not self:refreshLink(digest) then
+        if not self:refreshLink(digest, loads) then
             self.settings:recordSync(sent)
 
             if completed ~= nil then
-                completed(sent)
+                completed(sent, self.document_loads ~= loads)
             end
 
             return
@@ -912,6 +969,10 @@ function Seekquel:pushNow(asked_for, leaving, continuing, prepared, completed)
             self.settings:clearUploadDeferred(digest)
         end
 
+        if completed ~= nil and self.document_loads == loads and self:hasBudget() then
+            self:checkDocument(digest)
+        end
+
         if self:hasBudget() then
             self:sendStatusChange(digest)
         end
@@ -927,7 +988,7 @@ function Seekquel:pushNow(asked_for, leaving, continuing, prepared, completed)
         self.settings:recordSync(sent)
 
         if completed ~= nil then
-            completed(sent)
+            completed(sent, self.document_loads ~= loads)
         end
     end
 
@@ -989,13 +1050,24 @@ function Seekquel:sendStatusChange(digest)
         return
     end
 
-    local state = self.api:setStatus(digest, status)
-
-    if state ~= nil then
-        self.document_state = state
-        self.settings:markStatus(digest, status)
-        self:recordStatusMark(digest, state)
+    if self:isPaused() then
+        return
     end
+
+    local state, flagged = self.api:setStatus(digest, status)
+
+    if state == nil then
+        return
+    end
+
+    self:adoptDocument(digest, state)
+
+    if flagged or self:isPaused() then
+        return
+    end
+
+    self.settings:markStatus(digest, status)
+    self:recordStatusMark(digest, state)
 end
 
 function Seekquel:documentRating()
@@ -1051,12 +1123,23 @@ function Seekquel:sendRatingChange(digest)
         return
     end
 
-    local state = self.api:setRating(digest, rating)
-
-    if state ~= nil then
-        self.document_state = state
-        self.settings:markRating(digest, rating)
+    if self:isPaused() then
+        return
     end
+
+    local state, flagged = self.api:setRating(digest, rating)
+
+    if state == nil then
+        return
+    end
+
+    self:adoptDocument(digest, state)
+
+    if flagged or self:isPaused() then
+        return
+    end
+
+    self.settings:markRating(digest, rating)
 end
 
 function Seekquel:statusChangedAt(state)
@@ -1158,9 +1241,9 @@ function Seekquel:unsentHighlights(digest, highlights)
     return pending, fingerprints
 end
 
-function Seekquel:refreshLink(digest)
-    if self:isLinked() then
-        return true
+function Seekquel:refreshLink(digest, loads)
+    if self:isLinked() or self.document_loads ~= loads then
+        return self:isLinked()
     end
 
     self:loadDocument(digest)
@@ -1182,11 +1265,14 @@ function Seekquel:syncNow()
     end
 
     self.api:clearBackoff()
-    self:pushNow(true, false, false, nil, function(synced)
+
+    self:pushNow(true, false, false, nil, function(synced, confirmed)
         self.manual_sync_at = os.time()
 
         if not self:isLinked() then
             self:notify(self.document_state ~= nil and NOT_LINKED_TEXT or STILL_WAITING_TEXT)
+        elseif self:isPaused() then
+            self:notify(confirmed and PAUSED_TEXT or PAUSED_UNCONFIRMED_TEXT)
         elseif self.settings:isEnabled("show_reading_summary", true) then
             self:showReadingSummary(synced)
         elseif synced then
@@ -1469,6 +1555,23 @@ function Seekquel:isLinked()
     return self:book() ~= nil
 end
 
+function Seekquel:isPaused()
+    local book = self:book()
+
+    if book ~= nil then
+        return book.device_sync_paused == true
+    end
+
+    return self.digest ~= nil and self.settings:isSyncPaused(self.digest)
+end
+
+function Seekquel:remindPaused()
+    UIManager:show(InfoMessage:new({
+        text = PAUSED_REMINDER_TEXT,
+        timeout = PAUSED_REMINDER_SECONDS,
+    }))
+end
+
 function Seekquel:book()
     if type(self.document_state) ~= "table" or type(self.document_state.book) ~= "table" then
         return nil
@@ -1618,7 +1721,13 @@ end
 
 function Seekquel:addToMainMenu(menu_items)
     menu_items.seekquel = {
-        text = _("Seekquel"),
+        text_func = function()
+            if self:isPaused() then
+                return _("Seekquel (off for this book)")
+            end
+
+            return _("Seekquel")
+        end,
         sorting_hint = "tools",
         sub_item_table_func = function()
             return self:menuItems()
@@ -1657,6 +1766,10 @@ function Seekquel:menuItems()
             },
             self:serverItem(),
         }
+    end
+
+    if self:isReady() then
+        self:refreshDocument()
     end
 
     local items = {}
@@ -1699,6 +1812,7 @@ function Seekquel:menuItems()
             enabled = self:isLinked(),
             sub_item_table = self:ratingItems(),
         },
+        self:syncToggleItem(),
         {
             text = _("Sync now"),
             enabled = self:isReady(),
@@ -1872,13 +1986,14 @@ function Seekquel:syncStatusText()
         return table.concat(lines, "\n\n")
     end
 
+    local fresh = self:refreshDocument()
     local book = self:book()
 
     if book ~= nil then
         table.insert(lines, T(_("Linked to %1"), book.title or _("a book")))
     end
 
-    table.insert(lines, self:waitingLine())
+    table.insert(lines, self:waitingLine(fresh))
 
     return table.concat(lines, "\n\n")
 end
@@ -1897,9 +2012,13 @@ function Seekquel:lastSyncLine()
     return T(_("Last try: %1, and some of it did not go through. It will be sent again."), self:agoLabel(at))
 end
 
-function Seekquel:waitingLine()
+function Seekquel:waitingLine(fresh)
     if not self:isLinked() then
         return NOT_LINKED_TEXT
+    end
+
+    if self:isPaused() then
+        return fresh and PAUSED_TEXT or PAUSED_UNCONFIRMED_TEXT
     end
 
     local lines = {}
@@ -2010,6 +2129,10 @@ function Seekquel:bookLabel()
         return _("Not linked yet. Tap to find this book")
     end
 
+    if self:isPaused() then
+        return T(_("Linked to %1, syncing off"), book.title or _("a book"))
+    end
+
     return T(_("Linked to %1"), book.title or _("a book"))
 end
 
@@ -2082,15 +2205,22 @@ function Seekquel:setRating(rating, confirmation)
     end
 
     self:whenOnline(function()
-        local state = self.api:setRating(digest, rating)
+        local state, flagged = self.api:setRating(digest, rating)
 
         if state == nil then
-            self:notify(_("Could not save that. Try again when you have a connection."))
+            self:notify(NEEDS_CONNECTION_TEXT)
 
             return
         end
 
-        self.document_state = state
+        self:adoptDocument(digest, state)
+
+        if flagged or self:isPaused() then
+            self:notify(PAUSED_TEXT)
+
+            return
+        end
+
         self:notify(confirmation)
     end)
 end
@@ -2375,13 +2505,14 @@ function Seekquel:link(work_id, confirmation)
         local state = self.api:linkDocument(digest, work_id)
 
         if state == nil then
-            self:notify(_("Could not save that. Try again when you have a connection."))
+            self:notify(NEEDS_CONNECTION_TEXT)
 
             return
         end
 
         self.document_state = state
         self.settings:forgetBook(digest)
+        self:rememberPaused(digest, state)
         self.pushed_progress = nil
         self:observeStatus(digest)
         self:notify(confirmation)
@@ -2397,18 +2528,86 @@ function Seekquel:setStatus(status, label)
     end
 
     self:whenOnline(function()
-        local state = self.api:setStatus(digest, status)
+        local state, flagged = self.api:setStatus(digest, status)
 
         if state == nil then
-            self:notify(_("Could not save that. Try again when you have a connection."))
+            self:notify(NEEDS_CONNECTION_TEXT)
 
             return
         end
 
-        self.document_state = state
+        self:adoptDocument(digest, state)
+
+        if flagged or self:isPaused() then
+            self:notify(PAUSED_TEXT)
+
+            return
+        end
+
         self:recordStatusMark(digest, state)
         self:notify(T(_("Marked as %1."), label))
     end)
+end
+
+function Seekquel:setSyncPaused(paused)
+    local digest = self.digest
+
+    if digest == nil then
+        return
+    end
+
+    if not self:canReachNetwork() then
+        self:notify(NEEDS_CONNECTION_TEXT)
+
+        return
+    end
+
+    self:whenOnline(function()
+        local state, status = self.api:setSyncPaused(digest, paused)
+
+        if state == nil then
+            if status == CONFLICT_STATUS then
+                self:checkDocument(digest)
+                self:notify(NOT_LINKED_TEXT)
+
+                return
+            end
+
+            self:notify(status == NOT_FOUND_STATUS and SYNC_UNSUPPORTED_TEXT or NEEDS_CONNECTION_TEXT)
+
+            return
+        end
+
+        self:adoptDocument(digest, state)
+
+        if paused then
+            self:notify(SYNC_OFF_CONFIRMATION)
+
+            return
+        end
+
+        self.pushed_progress = nil
+        self:notify(SYNC_ON_CONFIRMATION)
+        self:pushNow()
+    end)
+end
+
+function Seekquel:syncToggleItem()
+    local paused = self:isPaused()
+    local text = _("Stop syncing this book")
+
+    if paused then
+        text = _("Start syncing this book")
+    end
+
+    return {
+        text = text,
+        enabled = self:isLinked(),
+        keep_menu_open = false,
+        callback = function()
+            self:setSyncPaused(not paused)
+        end,
+    }
 end
 
 function Seekquel:editSyncUrl()

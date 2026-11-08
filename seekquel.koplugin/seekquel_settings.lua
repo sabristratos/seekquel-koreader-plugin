@@ -25,6 +25,7 @@ local PER_BOOK_KEYS = {
     "rating_seen",
     "reading_summaries",
     "resume_dismissed",
+    "sync_paused",
 }
 
 Settings.UPLOAD_HIGHLIGHTS = "highlights"
@@ -395,6 +396,28 @@ function Settings:forgetBook(digest)
             self:set(key, stored)
         end
     end
+end
+
+function Settings:isSyncPaused(digest)
+    local paused = self:get("sync_paused", {})
+
+    return paused[digest] == true
+end
+
+function Settings:markSyncPaused(digest, paused)
+    local stored = self:get("sync_paused", {})
+    local value = nil
+
+    if paused then
+        value = true
+    end
+
+    if stored[digest] == value then
+        return
+    end
+
+    stored[digest] = value
+    self:set("sync_paused", stored)
 end
 
 function Settings:lastStatus(digest)
