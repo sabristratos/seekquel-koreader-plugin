@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.1] - 2026-11-14
+
+### Fixed
+
+- **A device disconnected in Seekquel now says so.** When you remove the device in Seekquel
+  under Settings, Integrations, the add-on used to keep trying with the old connection
+  without telling you, and set aside the reading time Seekquel turned away. It now shows
+  "Disconnected from Seekquel. Connect again from the Seekquel menu.", the menu offers
+  Connect, and reading time it had not sent goes across once you connect again.
+
 ## [1.18.0] - 2026-11-08
 
 ### Added

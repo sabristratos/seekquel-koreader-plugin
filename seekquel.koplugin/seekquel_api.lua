@@ -15,6 +15,7 @@ local LEAVING_BLOCK_TIMEOUT = 1
 local LEAVING_TOTAL_TIMEOUT = 2
 local SLOW_CALL_SECONDS = 5
 local BACKOFF_SECONDS = 120
+local KEY_REFUSED_STATUS = 401
 
 local MENU_BLOCK_TIMEOUT = 2
 local MENU_TOTAL_TIMEOUT = 4
@@ -26,6 +27,7 @@ Api.__index = Api
 Api.LEAVING_TIMEOUT = { block = LEAVING_BLOCK_TIMEOUT, total = LEAVING_TOTAL_TIMEOUT }
 Api.MENU_TIMEOUT = { block = MENU_BLOCK_TIMEOUT, total = MENU_TOTAL_TIMEOUT }
 Api.WITHOUT_BACKOFF = { arms_backoff = false }
+Api.KEY_REFUSED_STATUS = KEY_REFUSED_STATUS
 
 local function withoutNulls(value)
     if type(value) ~= "table" then
@@ -43,8 +45,8 @@ local function withoutNulls(value)
     return value
 end
 
-function Api:new(settings)
-    return setmetatable({ settings = settings }, self)
+function Api:new(settings, onKeyRefused)
+    return setmetatable({ settings = settings, onKeyRefused = onKeyRefused }, self)
 end
 
 function Api:isConfigured()
@@ -141,6 +143,10 @@ function Api:request(method, path, body, query, timeout, options)
 
     if status == nil or status < 200 or status > 299 then
         logger.warn("Seekquel:", method, path, "answered", tostring(code))
+
+        if status == KEY_REFUSED_STATUS and key ~= nil and self.onKeyRefused ~= nil then
+            self.onKeyRefused()
+        end
 
         return nil, status
     end

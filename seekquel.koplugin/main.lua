@@ -29,7 +29,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.18.0"
+local VERSION = "1.18.1"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -119,7 +119,9 @@ local SWITCHES = {
 
 function Seekquel:init()
     self.settings = Settings:new()
-    self.api = Api:new(self.settings)
+    self.api = Api:new(self.settings, function()
+        self:forgetRefusedKey()
+    end)
     self.stats = Stats:new()
     self.annotations = Annotations:new()
     self.metadata_reader = Metadata:new()
@@ -931,7 +933,7 @@ function Seekquel:pushNow(asked_for, leaving, continuing, prepared, completed)
             local answer, status = self.api:pushSessions(digest, days, timeout)
 
             if type(answer) ~= "table" then
-                if status ~= nil and status >= CLIENT_ERROR_FLOOR and status < SERVER_ERROR_FLOOR then
+                if status ~= nil and status ~= Api.KEY_REFUSED_STATUS and status >= CLIENT_ERROR_FLOOR and status < SERVER_ERROR_FLOOR then
                     self.settings:markHistoryRefused(digest, history)
                 end
 
@@ -2642,6 +2644,17 @@ function Seekquel:editSyncUrl()
 
     UIManager:show(dialog)
     dialog:onShowKeyboard()
+end
+
+function Seekquel:forgetRefusedKey()
+    if not self.settings:isConnected() then
+        return
+    end
+
+    logger.warn("Seekquel: the key was refused, forgetting it")
+    self.settings:disconnect()
+    self.document_state = nil
+    self:notify(_("Disconnected from Seekquel. Connect again from the Seekquel menu."))
 end
 
 function Seekquel:notify(text)

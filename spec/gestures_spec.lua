@@ -783,4 +783,39 @@ do
     check("and no longer reads as linked", plugin:isLinked() == false, tostring(plugin:isLinked()))
 end
 
+
+step("A key Seekquel no longer accepts disconnects the device and says so")
+
+do
+    local plugin = connected({ book = syncingBook() })
+    local DISCONNECTED_TEXT = "Disconnected from Seekquel. Connect again from the Seekquel menu."
+
+    serve(STATUS_WRITE, answers(401, { error = "unauthorized" }))
+    plugin.settings:markHistoryRefused("another-book", "fingerprint")
+
+    local answer = plugin.api:setStatus(DIGEST, "read")
+    local messages = #recorder.messages
+
+    check("nothing is recorded as sent", answer == nil, tostring(answer))
+    check("the dead key is forgotten", plugin.settings:isConnected() == false, tostring(plugin.settings:isConnected()))
+    check("the reader is told", lastMessage() == DISCONNECTED_TEXT, lastMessage())
+    check("what was held back is cleared, so it is sent after connecting again",
+        plugin.settings:refusedHistory("another-book") == nil, tostring(plugin.settings:refusedHistory("another-book")))
+
+    plugin.api:setStatus(DIGEST, "read")
+
+    check("a second refusal with no key says nothing more", #recorder.messages == messages, #recorder.messages)
+end
+
+step("Any other refusal leaves the connection alone")
+
+do
+    local plugin = connected({ book = syncingBook() })
+
+    serve(STATUS_WRITE, answers(422, { error = "invalid" }))
+    plugin.api:setStatus(DIGEST, "read")
+
+    check("the key is kept", plugin.settings:isConnected() == true, tostring(plugin.settings:isConnected()))
+end
+
 harness.report()
