@@ -29,7 +29,7 @@ local Seekquel = WidgetContainer:extend({
     is_doc_only = false,
 })
 
-local VERSION = "1.18.1"
+local VERSION = "1.18.2"
 local PAIRING_POLL_SECONDS = 3
 local PAIRING_MIN_POLL_SECONDS = 2
 local PAIRING_FALLBACK_SECONDS = 900
@@ -55,6 +55,10 @@ local TIME_NONE = "none"
 local TIME_SENT = "sent"
 local TIME_REFUSED = "refused"
 local TIME_WAITING = "waiting"
+local STATISTICS_ON = "on"
+local STATISTICS_OFF = "off"
+local STATISTICS_ABSENT = "absent"
+local MAX_KOREADER_VERSION_LENGTH = 32
 
 local UPDATE_INSTALLED = "installed"
 local UPDATE_DECLINED = "declined"
@@ -342,12 +346,23 @@ function Seekquel:diagnostics(slowest)
     local synced_at, synced_ok = self.settings:lastSync()
     local reading_time, reading_time_recorded = self.settings:readingTime()
     local update = self.settings:updateAttempt()
+    local statistics = self:statisticsProbe()
+    local statistics_plugin = select(2, self.settings:statistics())
 
     if type(update) ~= "table" then
         update = {}
     end
 
     return {
+        koreader_version = self:koreaderVersion(),
+        statistics_plugin = statistics_plugin,
+        stats_records = statistics.records,
+        stats_book_rows = statistics.book_rows,
+        stats_other_rows = statistics.other_rows,
+        stats_newest_day = statistics.newest_day,
+        stats_journal = statistics.journal,
+        stats_db_bytes = statistics.db_bytes,
+        stats_wal_bytes = statistics.wal_bytes,
         interrupted_during = interruption and interruption.label or nil,
         interrupted_at = interruption and interruption.at or nil,
         slowest_call = slowest and slowest.label or nil,
@@ -361,6 +376,42 @@ function Seekquel:diagnostics(slowest)
         update_outcome = update.outcome,
         update_at = update.at,
     }
+end
+
+function Seekquel:statisticsProbe()
+    local digest = self.settings:statistics()
+
+    if digest == nil then
+        return {}
+    end
+
+    return self.stats:probe(digest)
+end
+
+function Seekquel:koreaderVersion()
+    local ok, version = pcall(function()
+        return require("version"):getShortVersion()
+    end)
+
+    if not ok or type(version) ~= "string" or version == "" then
+        return nil
+    end
+
+    return version:sub(1, MAX_KOREADER_VERSION_LENGTH)
+end
+
+function Seekquel:statisticsPlugin()
+    local statistics = self.ui and self.ui.statistics
+
+    if type(statistics) ~= "table" then
+        return STATISTICS_ABSENT
+    end
+
+    if type(statistics.settings) == "table" and statistics.settings.is_enabled == false then
+        return STATISTICS_OFF
+    end
+
+    return STATISTICS_ON
 end
 
 function Seekquel:currentSettings()
@@ -1459,6 +1510,7 @@ end
 
 function Seekquel:readingDays(digest)
     self:flushStatistics()
+    self.settings:recordStatistics(digest, self:statisticsPlugin())
 
     local synced_at = self.settings:historySyncedAt(digest)
     local floor = synced_at and (synced_at - (HISTORY_OVERLAP_DAYS * SECONDS_PER_DAY)) or nil

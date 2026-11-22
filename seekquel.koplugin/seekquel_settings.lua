@@ -86,6 +86,8 @@ function Settings:disconnect()
     self:set("slowest_call", nil)
     self:set("reading_time_state", nil)
     self:set("reading_time_recorded", nil)
+    self:set("statistics_digest", nil)
+    self:set("statistics_plugin", nil)
     self:set("last_device_report_at", nil)
     self:set("reading_snapshot", nil)
     self:set("update_offered", nil)
@@ -218,6 +220,19 @@ function Settings:recordReadingTime(state, recorded)
 
     self:set("reading_time_state", state)
     self:set("reading_time_recorded", recorded)
+end
+
+function Settings:statistics()
+    return self:get("statistics_digest"), self:get("statistics_plugin")
+end
+
+function Settings:recordStatistics(digest, plugin)
+    if self:get("statistics_digest") == digest and self:get("statistics_plugin") == plugin then
+        return
+    end
+
+    self:set("statistics_digest", digest)
+    self:set("statistics_plugin", plugin)
 end
 
 function Settings:lastDeviceReport()

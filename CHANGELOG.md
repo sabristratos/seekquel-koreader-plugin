@@ -4,6 +4,24 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.2] - 2026-11-22
+
+### Added
+
+- **The hourly device report says what KOReader's statistics hold for the book you last read
+  time for.** It names up to four statistics records for the file with their last day and page
+  turns, how many belong to this exact file and how many to another copy with the same title
+  and authors, the newest day any book was recorded, whether the statistics plugin is on, the
+  statistics database's journal mode and size, and the KOReader version. When reading time
+  stops arriving, Seekquel can now see which of those is true without a file being sent.
+
+### Fixed
+
+- **Reading time is read from every statistics record KOReader holds for a file.** KOReader
+  files a book's statistics under its title, authors and file together, so a file can have
+  more than one record. The add-on read only the first, so reading filed under another
+  one never reached Seekquel. It now reads them all.
+
 ## [1.18.1] - 2026-11-14
 
 ### Fixed

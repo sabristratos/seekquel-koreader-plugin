@@ -8,6 +8,7 @@ Stats.__index = Stats
 local DB_NAME = "statistics.sqlite3"
 local MAX_DAYS = 400
 local HOURS_PER_DAY = 24
+local PROBE_MAX_RECORDS = 4
 
 Stats.OK = "ok"
 Stats.UNREADABLE = "unreadable"
@@ -49,12 +50,9 @@ function Stats:query(digest, since_time, offset_minutes)
             return nil
         end
 
-        local book_id = conn:rowexec(string.format(
-            "SELECT id FROM book WHERE md5 = %s LIMIT 1;",
-            self:quote(digest)
-        ))
+        local book_ids = self:bookIds(conn, digest)
 
-        if book_id == nil then
+        if book_ids == nil then
             conn:close()
 
             return { days = {}, state = Stats.UNTRACKED }
@@ -70,11 +68,11 @@ function Stats:query(digest, since_time, offset_minutes)
                             THEN (page - 1) * 1.0 / total_pages
                        END) AS reached
             FROM page_stat_data
-            WHERE id_book = %d AND start_time >= %d
+            WHERE id_book IN (%s) AND start_time >= %d
             GROUP BY day
             ORDER BY day DESC
             LIMIT %d;
-        ]], self:dayModifier(offset_minutes), tonumber(book_id), floor, MAX_DAYS)
+        ]], self:dayModifier(offset_minutes), book_ids, floor, MAX_DAYS)
 
         local columns = conn:exec(sql)
 
@@ -100,11 +98,11 @@ function Stats:query(digest, since_time, offset_minutes)
         end
 
         pcall(function()
-            self:attachHours(conn, byDate, book_id, floor, offset_minutes)
+            self:attachHours(conn, byDate, book_ids, floor, offset_minutes)
         end)
 
         pcall(function()
-            self:attachFractions(conn, byDate, book_id, floor, offset_minutes)
+            self:attachFractions(conn, byDate, book_ids, floor, offset_minutes)
         end)
 
         conn:close()
@@ -121,7 +119,111 @@ function Stats:query(digest, since_time, offset_minutes)
     return result
 end
 
-function Stats:attachHours(conn, byDate, book_id, floor, offset_minutes)
+function Stats:fileSize(path)
+    local file = io.open(path, "rb")
+
+    if file == nil then
+        return nil
+    end
+
+    local size = file:seek("end")
+
+    file:close()
+
+    return size
+end
+
+function Stats:probe(digest)
+    local ok, result = pcall(function()
+        local conn = SQ3.open(self:path(), "ro")
+
+        if conn == nil then
+            return nil
+        end
+
+        local quoted = self:quote(digest)
+
+        local columns = conn:exec(string.format([[
+            SELECT b.id,
+                   b.md5 = %s AS same_file,
+                   COALESCE(date(MAX(p.start_time), 'unixepoch'), '') AS newest,
+                   COUNT(p.start_time) AS turns
+            FROM book b
+            LEFT JOIN page_stat_data p ON p.id_book = b.id
+            WHERE b.md5 = %s
+               OR (b.title, b.authors) IN (SELECT title, authors FROM book WHERE md5 = %s)
+            GROUP BY b.id
+            ORDER BY newest DESC
+            LIMIT %d;
+        ]], quoted, quoted, quoted, PROBE_MAX_RECORDS))
+
+        local records = {}
+        local book_rows = 0
+        local other_rows = 0
+
+        if columns ~= nil then
+            for index = 1, #columns[1] do
+                local same_file = tonumber(columns[2][index]) == 1
+
+                if same_file then
+                    book_rows = book_rows + 1
+                else
+                    other_rows = other_rows + 1
+                end
+
+                table.insert(records, string.format(
+                    "%d%s%s/%d",
+                    tonumber(columns[1][index]),
+                    same_file and "=" or "~",
+                    tostring(columns[3][index]),
+                    tonumber(columns[4][index]) or 0
+                ))
+            end
+        end
+
+        local newest_day = conn:rowexec("SELECT date(MAX(start_time), 'unixepoch') FROM page_stat_data;")
+        local journal = conn:rowexec("PRAGMA journal_mode;")
+
+        conn:close()
+
+        return {
+            records = table.concat(records, ";"),
+            book_rows = book_rows,
+            other_rows = other_rows,
+            newest_day = newest_day ~= nil and tostring(newest_day) or nil,
+            journal = journal ~= nil and tostring(journal) or nil,
+            db_bytes = self:fileSize(self:path()),
+            wal_bytes = self:fileSize(self:path() .. "-wal"),
+        }
+    end)
+
+    if not ok or type(result) ~= "table" then
+        return {}
+    end
+
+    return result
+end
+
+function Stats:bookIds(conn, digest)
+    local columns = conn:exec(string.format(
+        "SELECT id FROM book WHERE md5 = %s;",
+        self:quote(digest)
+    ))
+
+    if columns == nil then
+        return nil
+    end
+
+    local ids = {}
+
+    for index = 1, #columns[1] do
+        table.insert(ids, string.format("%d", tonumber(columns[1][index])))
+    end
+
+    return table.concat(ids, ",")
+end
+
+function Stats:attachHours(conn, byDate, book_ids, floor, offset_minutes)
     local modifier = self:dayModifier(offset_minutes)
 
     local sql = string.format([[
@@ -129,11 +231,11 @@ function Stats:attachHours(conn, byDate, book_id, floor, offset_minutes)
                CAST(strftime('%%H', start_time, 'unixepoch', %s) AS INTEGER) AS hour,
                SUM(duration) AS seconds
         FROM page_stat_data
-        WHERE id_book = %d AND start_time >= %d
+        WHERE id_book IN (%s) AND start_time >= %d
         GROUP BY day, hour
         ORDER BY day DESC
         LIMIT %d;
-    ]], modifier, modifier, tonumber(book_id), floor, MAX_DAYS * HOURS_PER_DAY)
+    ]], modifier, modifier, book_ids, floor, MAX_DAYS * HOURS_PER_DAY)
 
     local columns = conn:exec(sql)
 
@@ -156,18 +258,18 @@ function Stats:attachHours(conn, byDate, book_id, floor, offset_minutes)
     end
 end
 
-function Stats:attachFractions(conn, byDate, book_id, floor, offset_minutes)
+function Stats:attachFractions(conn, byDate, book_ids, floor, offset_minutes)
     local sql = string.format([[
         SELECT day, SUM(1.0 / total_pages) AS fraction
         FROM (
             SELECT DISTINCT date(start_time, 'unixepoch', %s) AS day, page, total_pages
             FROM page_stat_data
-            WHERE id_book = %d AND start_time >= %d AND total_pages >= 1
+            WHERE id_book IN (%s) AND start_time >= %d AND total_pages >= 1
         )
         GROUP BY day
         ORDER BY day DESC
         LIMIT %d;
-    ]], self:dayModifier(offset_minutes), tonumber(book_id), floor, MAX_DAYS)
+    ]], self:dayModifier(offset_minutes), book_ids, floor, MAX_DAYS)
 
     local columns = conn:exec(sql)
 

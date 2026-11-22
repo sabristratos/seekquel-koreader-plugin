@@ -346,6 +346,41 @@ do
         state == nil and recorded == nil, tostring(state) .. "/" .. tostring(recorded))
 end
 
+step("The book the statistics were last read for is remembered for the hourly report")
+do
+    local settings = fresh()
+
+    local digest, plugin = settings:statistics()
+    check("a device that has read no statistics yet reports nothing", digest == nil and plugin == nil)
+
+    settings:recordStatistics("abc", "on")
+    digest, plugin = settings:statistics()
+    check("the digest and whether the statistics plugin is on are kept",
+        digest == "abc" and plugin == "on", tostring(digest) .. "/" .. tostring(plugin))
+
+    local writes = 0
+    local set = settings.set
+
+    settings.set = function(store, key, value)
+        writes = writes + 1
+
+        return set(store, key, value)
+    end
+
+    settings:recordStatistics("abc", "on")
+    check("an unchanged observation is not written again, because this runs on every sync tick",
+        writes == 0, writes)
+
+    settings:recordStatistics("abc", "off")
+    check("a change of the plugin's state is written", writes == 2, writes)
+
+    settings.set = set
+    settings:disconnect()
+    digest, plugin = settings:statistics()
+    check("disconnecting forgets both, so a re-paired device does not report the old book",
+        digest == nil and plugin == nil, tostring(digest) .. "/" .. tostring(plugin))
+end
+
 step("An update is offered once per version, and its outcome is kept for the next report")
 do
     local settings = fresh()

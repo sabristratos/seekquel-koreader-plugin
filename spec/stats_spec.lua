@@ -167,6 +167,108 @@ do
     os.remove(path)
 end
 
+step("A file KOReader holds under two records is one book with all of its reading")
+
+do
+    local path = os.tmpname()
+    local sql = table.concat({
+        "CREATE TABLE book (id integer PRIMARY KEY, md5 text, title text, authors text);",
+        "CREATE TABLE page_stat_data (id_book integer, page integer, start_time integer, duration integer, total_pages integer);",
+        "INSERT INTO book (id, md5, title, authors) VALUES (1, '" .. DIGEST .. "', 'Old title', 'A');",
+        "INSERT INTO book (id, md5, title, authors) VALUES (2, '" .. DIGEST .. "', 'New title', 'A');",
+        "INSERT INTO page_stat_data VALUES (1, 1, CAST(strftime('%s', 'now', '-3 days') AS INTEGER), 60, 800);",
+        "INSERT INTO page_stat_data VALUES (2, 5, CAST(strftime('%s', 'now') AS INTEGER) - 600, 90, 800);",
+    }, " ")
+
+    local pipe = io.popen("sqlite3 " .. path, "w")
+    pipe:write(sql)
+    pipe:close()
+
+    local stats = Stats:new()
+
+    stats.path = function()
+        return path
+    end
+
+    local days, state = stats:daysFor(DIGEST, nil, 0)
+
+    check("the read succeeds", state == Stats.OK, state)
+
+    check("reading filed under either record comes back, one day each",
+        #days == 2, #days)
+
+    local total = 0
+
+    for _index, day in ipairs(days) do
+        total = total + day.seconds
+    end
+
+    check("carrying the seconds of both records, so the newer one is never hidden by the older",
+        total == 150, total)
+
+    os.remove(path)
+end
+
+step("The probe says which records KOReader holds for a file, without a file being sent")
+
+do
+    local path = os.tmpname()
+    local sql = table.concat({
+        "CREATE TABLE book (id integer PRIMARY KEY, md5 text, title text, authors text);",
+        "CREATE TABLE page_stat_data (id_book integer, page integer, start_time integer, duration integer, total_pages integer);",
+        "INSERT INTO book (id, md5, title, authors) VALUES (1, '" .. DIGEST .. "', 'Carl', 'M');",
+        "INSERT INTO book (id, md5, title, authors) VALUES (2, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'Carl', 'M');",
+        "INSERT INTO book (id, md5, title, authors) VALUES (3, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'Other', 'N');",
+        "INSERT INTO page_stat_data VALUES (1, 1, strftime('%s', '2026-11-19 10:00:00'), 60, 800);",
+        "INSERT INTO page_stat_data VALUES (1, 2, strftime('%s', '2026-11-19 10:01:00'), 60, 800);",
+        "INSERT INTO page_stat_data VALUES (2, 9, strftime('%s', '2026-11-22 10:00:00'), 60, 800);",
+        "INSERT INTO page_stat_data VALUES (3, 1, strftime('%s', '2026-11-23 10:00:00'), 60, 800);",
+    }, " ")
+
+    local pipe = io.popen("sqlite3 " .. path, "w")
+    pipe:write(sql)
+    pipe:close()
+
+    local stats = Stats:new()
+
+    stats.path = function()
+        return path
+    end
+
+    local probe = stats:probe(DIGEST)
+
+    check("the file's own record is counted", probe.book_rows == 1, probe.book_rows)
+
+    check("another record under the same title and authors is counted apart",
+        probe.other_rows == 1, probe.other_rows)
+
+    check("a record of an unrelated book is left out",
+        probe.records ~= nil and not probe.records:find("^3") and not probe.records:find(";3"), probe.records)
+
+    check("each record names its last day and how many page turns it holds, the other record's marked with a tilde",
+        probe.records == "2~2026-11-22/1;1=2026-11-19/2", probe.records)
+
+    check("the newest day any book was recorded is reported",
+        probe.newest_day == "2026-11-23", probe.newest_day)
+
+    check("so is the journal mode and the size of the database",
+        probe.journal ~= nil and (probe.db_bytes or 0) > 0, tostring(probe.journal) .. " " .. tostring(probe.db_bytes))
+
+    os.remove(path)
+end
+
+do
+    local stats = Stats:new()
+
+    stats.path = function()
+        return "/nonexistent/statistics.sqlite3"
+    end
+
+    local probe = stats:probe(DIGEST)
+
+    check("a database that cannot be read gives an empty probe, never an error", next(probe) == nil)
+end
+
 step("A window with nothing in it is a successful read, not a broken one")
 
 do
